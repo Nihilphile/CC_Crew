@@ -48,20 +48,39 @@ $ShowAll = Has-Flag "--all"
 
 $skillRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 $agentsPath = Join-Path $skillRoot "manager\agents.json"
+$rolesPath = Join-Path $skillRoot "prompt_templates\roles.json"
+$roleTemplatesDir = Join-Path $skillRoot "prompt_templates\role"
 $sendScript = Join-Path $skillRoot "scripts\Send-ClaudeCommand.ps1"
 $stopRuntime = Join-Path $skillRoot "scripts\Stop-ClaudeRuntime.ps1"
 $createLockPath = Join-Path $skillRoot "manager\.create-session.lock"
 
+# For role register/update: collect -Files values
+$RoleFiles = @()
+if ($Command -in @("role") -and $scriptArgs.Count -gt 1) {
+    for ($i = 2; $i -lt $scriptArgs.Count; $i++) {
+        if ($scriptArgs[$i] -eq "-Files" -or $scriptArgs[$i] -eq "-f") {
+            for ($j = $i + 1; $j -lt $scriptArgs.Count; $j++) {
+                if ($scriptArgs[$j] -like "-*") { break }
+                $RoleFiles += $scriptArgs[$j]
+            }
+            break
+        }
+    }
+}
+
 if (-not $Command) {
     Write-Host "ClaudeTui -- Claude Worker Manager"
     Write-Host ""
-    Write-Host "Commands: send, agents, agent, wait, result, remove"
+    Write-Host "Commands: send, agents, agent, wait, result, remove, role"
     Write-Host "  send   <agent_id> -Prompt <p> [-Role <r>] [-Workspace <w>] [-FreshSession] [-TimeoutSeconds <n>] [-Model <name>] [-Mode tui|p]"
     Write-Host "  agents [--all]"
     Write-Host "  agent  <agent_id>"
     Write-Host "  wait   any [<agent_id> ...] | <agent_id> [<agent_id> ...] | all"
     Write-Host "  result <agent_id>"
     Write-Host "  remove <agent_id> | all"
+    Write-Host "  role   register <name> -Files <path> [<path> ...] [-Force]"
+    Write-Host "  role   update <name> -Files <path> [<path> ...]"
+    Write-Host "  role   list | show <name> | unregister <name>"
     exit 0
 }
 
@@ -200,6 +219,50 @@ function Get-ClaudeProjectDir {
         Select-Object -First 1
     if (-not $newest) { return $null }
     return $newest.BaseName
+}
+
+# ====================================================
+# Role registry helpers
+# ====================================================
+
+function Read-Roles {
+    $rl = [ordered]@{}
+    if (Test-Path -LiteralPath $rolesPath -PathType Leaf) {
+        try {
+            $raw = Get-Content -LiteralPath $rolesPath -Raw -Encoding UTF8
+            if ($raw.Trim()) {
+                $parsed = $raw | ConvertFrom-Json
+                foreach ($p in $parsed.PSObject.Properties) { $rl[$p.Name] = $p.Value }
+            }
+        } catch { $rl = [ordered]@{} }
+    }
+    return $rl
+}
+
+function Save-Roles {
+    param($Roles)
+    $dir = Split-Path -Parent $rolesPath
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $Roles | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $rolesPath -Encoding UTF8
+}
+
+# Get role template content (all files concatenated) for prompt injection.
+# Returns empty string if role not found or has no templates.
+function Get-RoleTemplateContent {
+    param([string]$RoleName)
+    $roles = Read-Roles
+    if (-not $roles.Contains($RoleName)) { return "" }
+    $r = $roles[$RoleName]
+    if (-not $r.templates -or $r.templates.Count -eq 0) { return "" }
+    $dir = Join-Path $roleTemplatesDir $RoleName
+    $content = ""
+    foreach ($t in $r.templates) {
+        $tp = Join-Path $dir $t
+        if (Test-Path -LiteralPath $tp -PathType Leaf) {
+            $content += "`n$(Get-Content -LiteralPath $tp -Raw -Encoding UTF8)`n"
+        }
+    }
+    return $content
 }
 
 # ====================================================
@@ -381,6 +444,13 @@ function _DoLaunch {
         $sendArgs['SessionId'] = $Entry.session_uuid
     } elseif (-not $Entry.session_uuid) {
         $sendArgs['FreshSession'] = $true
+    }
+
+    # Inject registered role templates when -Role is explicitly used
+    $roleTmpl = Get-RoleTemplateContent -RoleName $Role
+    if ($roleTmpl) {
+        $sendArgs['Prompt'] = $roleTmpl + "`n`n" + $Prompt
+        Write-Host "[MANAGER] Injected role template: $Role"
     }
 
     $gotLock = $false
@@ -820,6 +890,143 @@ function Invoke-Remove {
 }
 
 # ====================================================
+# role commands
+# ====================================================
+
+function Invoke-RoleRegister {
+    param([string]$RoleName, [string[]]$Files, [switch]$Force)
+
+    if (-not $RoleName) { throw "Usage: ClaudeTui role register <name> -Files <path> [<path> ...] [-Force]" }
+    if (-not $Files -or $Files.Count -eq 0) { throw "Missing -Files. Usage: role register <name> -Files <path> [<path> ...]" }
+    $safeRole = $RoleName -replace '[^a-zA-Z0-9_.-]', '_'
+
+    $roles = Read-Roles
+    if ($roles.Contains($safeRole) -and -not $Force) {
+        $existing = $roles[$safeRole]
+        Write-Host "[MANAGER] Role '$safeRole' already exists:"
+        Write-Host "  Registered by : $($existing.registered_by)"
+        Write-Host "  Templates     : $($existing.templates -join ', ')"
+        Write-Host "  Created       : $($existing.created_at)"
+        Write-Host ""
+        Write-Host "  Use -Force to overwrite, or choose a different name."
+        exit 1
+    }
+
+    # Validate all source files exist
+    foreach ($f in $Files) {
+        if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { throw "File not found: $f" }
+    }
+
+    # Create / overwrite template directory
+    $targetDir = Join-Path $roleTemplatesDir $safeRole
+    Remove-Item $targetDir -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+
+    $copied = @()
+    foreach ($f in $Files) {
+        $name = Split-Path -Leaf $f
+        Copy-Item -LiteralPath $f -Destination (Join-Path $targetDir $name) -Force
+        $copied += $name
+    }
+
+    $now = (Get-Date).ToString("o")
+    $roles[$safeRole] = [ordered]@{
+        role_name      = $safeRole
+        registered_by  = if ($env:USERNAME) { $env:USERNAME } else { "unknown" }
+        templates      = $copied
+        created_at     = $now
+        updated_at     = $now
+    }
+    Save-Roles $roles
+    Write-Host "[MANAGER] Role '$safeRole' registered with $($copied.Count) template(s): $($copied -join ', ')"
+}
+
+function Invoke-RoleUpdate {
+    param([string]$RoleName, [string[]]$Files)
+
+    if (-not $RoleName) { throw "Usage: ClaudeTui role update <name> -Files <path> [<path> ...]" }
+    if (-not $Files -or $Files.Count -eq 0) { throw "Missing -Files." }
+    $safeRole = $RoleName -replace '[^a-zA-Z0-9_.-]', '_'
+
+    $roles = Read-Roles
+    if (-not $roles.Contains($safeRole)) { throw "Role '$safeRole' not found. Use 'role register' first." }
+
+    foreach ($f in $Files) {
+        if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { throw "File not found: $f" }
+    }
+
+    $targetDir = Join-Path $roleTemplatesDir $safeRole
+    Remove-Item $targetDir -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+
+    $copied = @()
+    foreach ($f in $Files) {
+        $name = Split-Path -Leaf $f
+        Copy-Item -LiteralPath $f -Destination (Join-Path $targetDir $name) -Force
+        $copied += $name
+    }
+
+    $roles[$safeRole].templates = $copied
+    $roles[$safeRole].updated_at = (Get-Date).ToString("o")
+    Save-Roles $roles
+    Write-Host "[MANAGER] Role '$safeRole' updated with $($copied.Count) template(s): $($copied -join ', ')"
+}
+
+function Invoke-RoleList {
+    $roles = Read-Roles
+    if ($roles.Count -eq 0) { Write-Host "No roles registered."; return }
+    Write-Host ("{0,-26} {1,-16} {2,-20} {3}" -f "Role Name", "Registered By", "Updated", "Templates")
+    Write-Host ("-" * 90)
+    foreach ($k in @($roles.Keys)) {
+        $r = $roles[$k]
+        $templates = $r.templates -join ', '
+        $upStr = [string]$r.updated_at; if ($upStr.Length -gt 19) { $upStr = $upStr.Substring(0,19) }
+        Write-Host ("{0,-26} {1,-16} {2,-20} {3}" -f $r.role_name, $r.registered_by, $upStr, $templates)
+    }
+    Write-Host ""; Write-Host ("Total: {0} role(s)" -f $roles.Count)
+}
+
+function Invoke-RoleShow {
+    param([string]$RoleName)
+    if (-not $RoleName) { throw "Usage: ClaudeTui role show <name>" }
+    $safeRole = $RoleName -replace '[^a-zA-Z0-9_.-]', '_'
+    $roles = Read-Roles
+    if (-not $roles.Contains($safeRole)) { Write-Host "Role '$safeRole' not found."; exit 1 }
+    $r = $roles[$safeRole]
+    Write-Host "=========================================="
+    Write-Host "  Role: $($r.role_name)"
+    Write-Host "=========================================="
+    Write-Host "  Registered by : $($r.registered_by)"
+    Write-Host "  Templates     : $($r.templates -join ', ')"
+    Write-Host "  Created       : $($r.created_at)"
+    Write-Host "  Updated       : $($r.updated_at)"
+    Write-Host ""
+    $dir = Join-Path $roleTemplatesDir $safeRole
+    foreach ($t in $r.templates) {
+        $tp = Join-Path $dir $t
+        if (Test-Path -LiteralPath $tp -PathType Leaf) {
+            Write-Host "  --- $t ($((Get-Item $tp).Length) bytes) ---"
+            Write-Host (Get-Content -LiteralPath $tp -Raw)
+            Write-Host ""
+        } else {
+            Write-Host "  --- $t (MISSING) ---"
+        }
+    }
+}
+
+function Invoke-RoleUnregister {
+    param([string]$RoleName)
+    if (-not $RoleName) { throw "Usage: ClaudeTui role unregister <name>" }
+    $safeRole = $RoleName -replace '[^a-zA-Z0-9_.-]', '_'
+    $roles = Read-Roles
+    if (-not $roles.Contains($safeRole)) { Write-Host "Role '$safeRole' not found."; exit 1 }
+    $roles.Remove($safeRole)
+    Save-Roles $roles
+    Remove-Item (Join-Path $roleTemplatesDir $safeRole) -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "[MANAGER] Role '$safeRole' unregistered."
+}
+
+# ====================================================
 # dispatch
 # ====================================================
 
@@ -830,6 +1037,19 @@ switch ($Command) {
     "wait"   { Invoke-Wait -Targets $AgentNames }
     "result" { Invoke-Result -AgentId $AgentName }
     "remove" { Invoke-Remove -Target $AgentName }
+    "role"   {
+        $roleSub = if ($scriptArgs.Count -gt 1) { $scriptArgs[1] } else { "" }
+        $roleNameArg = if ($scriptArgs.Count -gt 2 -and $scriptArgs[2] -notlike "-*") { $scriptArgs[2] } else { $null }
+        $forceFlag = Has-Flag "-Force"
+        switch ($roleSub) {
+            "register"    { Invoke-RoleRegister -RoleName $roleNameArg -Files $RoleFiles -Force:$forceFlag }
+            "update"      { Invoke-RoleUpdate -RoleName $roleNameArg -Files $RoleFiles }
+            "list"        { Invoke-RoleList }
+            "show"        { Invoke-RoleShow -RoleName $roleNameArg }
+            "unregister"  { Invoke-RoleUnregister -RoleName $roleNameArg }
+            default       { Write-Host "Usage: ClaudeTui role <register|update|list|show|unregister> [...]"; exit 1 }
+        }
+    }
     default  {
         if ($Command) {
             Write-Host "Unknown command: $Command"

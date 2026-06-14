@@ -1,7 +1,6 @@
 param(
     [string]$AgentName = "claude-worker",
     [string]$Workspace = "F:\AI_project\deepseek",
-    [ValidateSet("explorer", "reviewer", "planner", "worker")]
     [string]$Role = "explorer"
 )
 Set-StrictMode -Version Latest

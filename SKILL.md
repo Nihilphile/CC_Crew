@@ -49,7 +49,7 @@ All commands via `ClaudeTui.ps1`:
 
 | Command | Description |
 |---------|-------------|
-| `send <agent_id> -Prompt <p> [-Role r] [-Workspace w] [-FreshSession] [-TimeoutSeconds <n>] [-Model <name>] [-Mode tui\|p]` | Launch a worker. Resumes existing session if available. `-FreshSession`: create new Claude session. `-TimeoutSeconds`: default 600s. `-Model`: e.g. `opus`, `sonnet`. `-Mode`: `tui` for interactive window, `p` (default) for non-interactive. |
+| `send <agent_id> -Prompt <p> [-Role r] [-Workspace w] [-FreshSession] [-TimeoutSeconds <n>] [-Model <name>] [-Mode tui\|p]` | Launch a worker. Resumes existing session if available. `-Role`: injects registered role templates into prompt. If the role name matches a registry entry, its template files are prepended to the task prompt. Works on both new and resumed sessions. |
 | `agents [--all]` | List agents with Worker State, Output State, and Session UUID. `--all` includes soft-deleted agents. |
 | `agent <agent_id>` | Show full detail: Worker State, Output State, status tags, session UUID, PID, current/pending task, timestamps. |
 | `wait any [<agent_id> ...]` | `wait any` alone: any agent globally. `wait any coder_a reviewer_a`: first of the subset that finishes. Returns JSON, auto-marks `consumed`. |
@@ -58,6 +58,11 @@ All commands via `ClaudeTui.ps1`:
 | `result <agent_id>` | Print the agent's `result.md`. |
 | `remove <agent_id>` | Soft-delete agent (status → `["deleted"]`). Running/finishing agents cannot be removed. |
 | `remove all` | Soft-delete all idle/finished agents. |
+| `role register <name> -Files <path> [<path> ...] [-Force]` | Register a role with template files. Name conflict reports existing info; use `-Force` to overwrite. Templates are copied to `prompt_templates/role/<name>/`. |
+| `role update <name> -Files <path> [<path> ...]` | Replace a role's template files. |
+| `role list` | List all registered roles (name, registered by, updated, templates). |
+| `role show <name>` | Show role details including full template contents. |
+| `role unregister <name>` | Remove a role and its template directory. |
 
 ### Busy Agent Handling
 
@@ -76,14 +81,61 @@ When sending to a running agent, the CLI prompts:
 
 No kill option — killing mid-API-call can leave orphaned requests on the provider.
 
-## Roles
+## Role System
 
-| Role | Edits Files | Use For |
-|------|-------------|---------|
-| `explorer` | No | Investigate workspace, report findings |
-| `reviewer` | No | Review code, produce review report |
-| `planner` | No | Plan implementation approaches |
-| `worker` | Yes | Implement, edit files within assigned scope |
+`-Role` is a free-form label. When used with a **registered role**, manager injects the role's template files into the worker prompt. Without a registered role, it acts as a lightweight tag in the prompt header (`"You are a $Role agent"`).
+
+### Registering a Role
+
+```powershell
+# Create prompt template files
+# my-workflow.md: workflow instructions
+# safety.md: safety rules
+
+& $tui role register coder-tdd -Files ./my-workflow.md, ./safety.md
+
+# Name conflict? Manager reports existing info:
+# [MANAGER] Role 'coder-tdd' already exists:
+#   Registered by : Dreamjiao
+#   Templates     : my-workflow.md, safety.md
+#   Use -Force to overwrite, or choose a different name.
+
+& $tui role register coder-tdd -Files ./new-rules.md -Force
+```
+
+### Using a Registered Role
+
+```powershell
+# On a new agent — role template injected
+& $tui send my-coder -Role coder-tdd -Prompt "Implement feature X"
+
+# Mid-session role switch — same agent, different role
+& $tui send my-coder -Role reviewer -Prompt "Review the code you wrote"
+
+# No -Role — no injection, plain session resume
+& $tui send my-coder -Prompt "Continue working"
+```
+
+### Role Lifecycle
+
+```
+role register → templates copied to prompt_templates/role/<name>/
+role update   → templates replaced
+role unregister → templates deleted, registry entry removed
+```
+
+Roles are shared across all orchestrators using the same manager. Name conflicts between orchestrators are surfaced (not silently overwritten), so naming conventions like `coder-tdd` vs `coder-explore-first` emerge naturally.
+
+### Built-in Role Labels
+
+These are just labels — no validation, no built-in prompt templates. Use them as-is or register custom ones.
+
+| Label | Typical Use |
+|-------|-------------|
+| `explorer` | Investigate workspace, report findings |
+| `reviewer` | Review code, produce review report |
+| `planner` | Plan implementation approaches |
+| `worker` | Implement, edit files within assigned scope |
 
 ## Core Patterns
 

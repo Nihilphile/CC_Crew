@@ -20,3 +20,8 @@ Desktop.ini
 
 # Local Claude settings (per-user trust, etc.)
 .claude/settings.local.json
+
+# Role runtime data
+prompt_templates/roles.json
+prompt_templates/role/*
+!prompt_templates/role/.gitkeep

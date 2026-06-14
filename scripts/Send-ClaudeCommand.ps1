@@ -3,7 +3,6 @@ param(
     [string]$Prompt,
     [string]$AgentName = "claude-worker",
     [string]$Workspace = "F:\AI_project\deepseek",
-    [ValidateSet("explorer", "reviewer", "planner", "worker")]
     [string]$Role = "explorer",
     [switch]$NoStartIfMissing,
     [switch]$FreshSession,
@@ -219,18 +218,28 @@ function Stop-TaskProcess {
 
 # ---- prompt builder ----
 
+# ---- prompt templates (from disk, editable) ----
+$templatesDir = Join-Path $skillRoot "prompt_templates\default"
+
+function Build-SystemPrompt {
+    $sysPath = Join-Path $templatesDir "system.md"
+    if (Test-Path -LiteralPath $sysPath -PathType Leaf) {
+        return (Get-Content -LiteralPath $sysPath -Raw -Encoding UTF8).Trim()
+    }
+    return ""
+}
+
 function Build-WorkerPrompt {
     param([string]$UserPrompt)
-    $roleMap = @{
-        explorer = "You are an explorer agent. Do NOT edit files. Execute the task, then complete."
-        reviewer = "You are a reviewer agent. Do NOT edit files. Execute the task, then complete."
-        planner  = "You are a planner agent. Do NOT edit files. Execute the task, then complete."
-        worker   = "You are a worker agent. Edit files when the task requires it. Execute the task, then complete."
+    # Read header template, replace role placeholder
+    $headerPath = Join-Path $templatesDir "header.md"
+    $header = "[worker]`nYou are a $Role agent. Execute the task, then complete."
+    if (Test-Path -LiteralPath $headerPath -PathType Leaf) {
+        $header = (Get-Content -LiteralPath $headerPath -Raw -Encoding UTF8).Trim()
+        $header = $header -replace '~~ROLE~~', $Role
     }
-    $roleLine = if ($roleMap.Contains($Role)) { $roleMap[$Role] } else { $roleMap["explorer"] }
     return @"
-[worker]
-$roleLine
+$header
 Automated pipeline. No confirmation needed. No exploring beyond the task.
 
 MANDATORY COMPLETION — after the task, do these steps:
@@ -238,18 +247,10 @@ MANDATORY COMPLETION — after the task, do these steps:
 2. Call: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$completeScriptPath" -AgentName "$AgentName" -CommandId "$commandId" -ResultPath "$resultPath" -DonePath "$donePath"
 If task failed: add -State failed -ExitCode 1. Step 2 is non-negotiable.
 
-RULES:
-- Do NOT run broad process-kill commands.
-- Do NOT expose credentials or API keys.
-- Your session is preserved between tasks. The orchestrator will resume you with the same context.
-
 TASK:
 $UserPrompt
 "@
 }
-
-# ---- launch summary ----
-
 function Write-LaunchSummary {
     param([string]$Cid, [string]$DPath, [string]$RPath, [string]$RunPath, [string]$PPath, [int]$TPid, [string]$Sid)
     [ordered]@{
@@ -380,10 +381,20 @@ if (-not (Test-Path $permsFile)) {
     Write-Host "[PERMS] Created worker permissions file"
 }
 
-# 6. Build full prompt + write to file
+# 6. Build full prompt + system prompt + write to file
 $fullPrompt = Build-WorkerPrompt -UserPrompt $Prompt
 Set-Content -LiteralPath $promptPath -Value $fullPrompt -Encoding UTF8
 Write-Host "Prompt written: $promptPath ($($fullPrompt.Length) chars)"
+
+# Build system prompt (runtime contract, injected via --append-system-prompt) and write to file
+$systemPrompt = Build-SystemPrompt
+$systemPromptPath = Join-Path $runRoot "run-command-$commandId.system.txt"
+if ($systemPrompt) {
+    Set-Content -LiteralPath $systemPromptPath -Value $systemPrompt -Encoding UTF8
+    Write-Host "System prompt written: $systemPromptPath ($($systemPrompt.Length) chars)"
+} else {
+    $systemPromptPath = ""
+}
 
 # 7. Update status
 $status = New-AgentStatus -Sid $curSessionId -StateVal "running"
@@ -451,6 +462,8 @@ if ("$curSessionId" -ne "") {
 `$promptContent = Get-Content -LiteralPath "$promptPath" -Raw -Encoding UTF8
 if (`$promptContent) { `$fullArgs += ,`$promptContent }
 
+	# Append system prompt (runtime contract, compression-resistant)
+	if ("$systemPromptPath" -ne "") { `$fullArgs += @("--system-prompt-file", "$systemPromptPath") }
 Write-Host "[RUNNER] Launching Claude..."
 & claude @fullArgs
 `$exit = `$LASTEXITCODE
@@ -499,11 +512,13 @@ Set-Location -LiteralPath "$Workspace"
 `$modelArg = if ("$Model" -ne "") { @("--model","$Model") } else { @() }
 `$baseArgs = @("--dangerously-skip-permissions","--permission-mode","bypassPermissions","--add-dir","$Workspace","--settings",`$settingsJson) + `$modelArg
 
+`$sysPromptArgs = if ("$systemPromptPath" -ne "") { @("--system-prompt-file","$systemPromptPath") } else { @() }
+
 # -p mode. If session UUID provided, resume it; otherwise start fresh.
 if ("$curSessionId" -ne "") {
-    `$jsonOut = & claude @baseArgs --resume "$curSessionId" -p --output-format json `$workerPrompt
+    `$jsonOut = & claude @baseArgs --resume "$curSessionId" -p --output-format json `$workerPrompt `$sysPromptArgs
 } else {
-    `$jsonOut = & claude @baseArgs -p --output-format json `$workerPrompt
+    `$jsonOut = & claude @baseArgs -p --output-format json `$workerPrompt `$sysPromptArgs
 }
 `$exit = `$LASTEXITCODE
 
