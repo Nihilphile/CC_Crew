@@ -1,6 +1,6 @@
 param(
     [string]$AgentName = "claude-worker",
-    [string]$Workspace = ""
+    [string]$Workspace = "",
     [string]$Role = "explorer"
 )
 Set-StrictMode -Version Latest
