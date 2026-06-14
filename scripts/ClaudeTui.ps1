@@ -46,6 +46,19 @@ $Mode = Get-Arg "-Mode"
 if (-not $Mode) { $Mode = Get-Arg "-M" }
 $ShowAll = Has-Flag "--all"
 
+# For remove all -k: collect agent IDs to keep
+$KeepIds = @()
+if ($Command -eq "remove" -and ($scriptArgs -contains "-k" -or $scriptArgs -contains "-Keep")) {
+    $inKeep = $false
+    foreach ($a in $scriptArgs) {
+        if ($a -eq "-k" -or $a -eq "-Keep") { $inKeep = $true; continue }
+        if ($inKeep) {
+            if ($a -like "-*") { break }
+            $KeepIds += $a
+        }
+    }
+}
+
 $skillRoot = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 $agentsPath = Join-Path $skillRoot "manager\agents.json"
 $rolesPath = Join-Path $skillRoot "prompt_templates\roles.json"
@@ -77,7 +90,7 @@ if (-not $Command) {
     Write-Host "  agent  <agent_id>"
     Write-Host "  wait   any [<agent_id> ...] | <agent_id> [<agent_id> ...] | all"
     Write-Host "  result <agent_id>"
-    Write-Host "  remove <agent_id> | all"
+    Write-Host "  remove <agent_id> | all [-k <id1> [<id2> ...]]"
     Write-Host "  role   register <name> -Files <path> [<path> ...] [-Force]"
     Write-Host "  role   update <name> -Files <path> [<path> ...]"
     Write-Host "  role   list | show <name> | unregister <name>"
@@ -846,17 +859,19 @@ function Invoke-Result {
 }
 
 function Invoke-Remove {
-    param([string]$Target)
+    param([string]$Target, [string[]]$Keep = @())
 
-    if (-not $Target) { throw "Usage: ClaudeTui remove <agent_id|all>" }
+    if (-not $Target) { throw "Usage: ClaudeTui remove <agent_id|all> [-k <id1> ...]" }
 
     $Agents = Read-Agents
 
     if ($Target -eq "all") {
-        $count = 0
+        $keepSet = @{}; $Keep | ForEach-Object { $keepSet[$_] = $true }
+        $count = 0; $skipped = 0
         foreach ($key in @($Agents.Keys)) {
             $e = $Agents[$key]
             if ("deleted" -in $e.status) { continue }
+            if ($keepSet.ContainsKey($e.agent_id)) { $skipped++; continue }
             if ("running" -in $e.status -or "finishing" -in $e.status) {
                 Write-Host "[SKIP] $($e.agent_id) is running, cannot remove"
                 continue
@@ -867,10 +882,10 @@ function Invoke-Remove {
             $count++
         }
         Save-Agents -Agents $Agents
-        if ($count -eq 0) {
+        if ($count -eq 0 -and $skipped -eq 0) {
             Write-Host "No removable agents."
         } else {
-            Write-Host "[OK] Soft-deleted $count agent(s)."
+            Write-Host ("[OK] Soft-deleted {0} agent(s), kept {1}" -f $count, $skipped)
         }
         return
     }
@@ -1036,7 +1051,7 @@ switch ($Command) {
     "agent"  { Invoke-AgentDetail -AgentId $AgentName }
     "wait"   { Invoke-Wait -Targets $AgentNames }
     "result" { Invoke-Result -AgentId $AgentName }
-    "remove" { Invoke-Remove -Target $AgentName }
+    "remove" { Invoke-Remove -Target $AgentName -Keep $KeepIds }
     "role"   {
         $roleSub = if ($scriptArgs.Count -gt 1) { $scriptArgs[1] } else { "" }
         $roleNameArg = if ($scriptArgs.Count -gt 2 -and $scriptArgs[2] -notlike "-*") { $scriptArgs[2] } else { $null }
