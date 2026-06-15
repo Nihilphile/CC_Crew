@@ -741,6 +741,9 @@ function _DoLaunch {
             launched_at   = $launch.launched_at
         }
         $Entry.updated_at = (Get-Date).ToString("o")
+        # CRITICAL: Invalidate cache before reading. Another process may have saved
+        # agents.json while we were waiting for the create-session lock.
+        Invalidate-Cache
         $Agents = Read-Agents
         $Agents[$Entry.internal_id] = $Entry
         Save-Agents -Agents $Agents
