@@ -20,7 +20,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<skillRoot>/scripts/Upd
 
 ### State Argument
 
-States are specified as `--<state>`, e.g., `--running`, `--implementing`, `--exit`. Exactly one state must be provided.
+States are specified as `--<state>`, e.g., `--running` or `--exit`. Exactly one state must be provided. Use only states listed in your role's legal states block.
 
 ### Optional Parameters
 
@@ -50,8 +50,8 @@ Setting `--exit` requires two steps:
 # Report that you are running
 powershell ... -AgentName "my-coder" -CommandId "20260615-..." -Role "coder" --running
 
-# Report implementation phase with summary
-powershell ... -AgentName "my-coder" -CommandId "20260615-..." -Role "coder" --implementing -SummaryMessage "Phase 2: tests passing"
+# Report progress with a legal role-specific state when your role defines one
+powershell ... -AgentName "my-coder" -CommandId "20260615-..." -Role "coder" --<legal-state> -SummaryMessage "Phase 2: tests passing"
 
 # First exit call — prints checklist, no state change
 powershell ... -AgentName "my-coder" -CommandId "20260615-..." -Role "coder" --exit

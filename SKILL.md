@@ -5,239 +5,149 @@ description: Delegate bounded tasks to Claude Code worker agents through manager
 
 # Claude Worker v2
 
-File-protocol multi-agent orchestration for Claude Code. Workers run via `claude --resume <uuid>` in visible PowerShell windows. Manager (`manager/agents.json`) is the single state source. v2 role system with layered prompt injection and JSON state tracking.
+Claude Worker v2 is a file-protocol multi-agent manager for launching Claude Code
+workers with registered roles, reusable prompt fragments, session reuse, and JSON
+lifecycle state.
 
-## Setup
-
-1. Install [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and configure API access.
-2. Clone this repo.
-3. Set default workspace (pick one):
-   - Create `manager/config.json`: `{"default_workspace": "F:/path/to/your/project"}`
-   - Env var: `$env:CLAUDE_WORKER_DEFAULT_WS = "F:/path/to/your/project"`
-   - Or pass `-Workspace` on every `send`.
-4. Run from project root:
-   ```powershell
-   $tui = "./scripts/ClaudeTui.ps1"
-   ```
-
-## Execution Model
-
-Two runner modes (set with `-Mode`):
-
-- **`-p`** (default): Non-interactive. Claude exits cleanly after the task. Best for automated pipelines.
-  Claude writes JSON output, session files are properly flushed to disk. **Session resume is reliable.**
-  Recommended for all multi-turn workflows.
-- **`tui`** (`-Mode tui`): Interactive Claude window. Workers signal completion via `Update-WorkerState --exit -Confirm`. Manager detects the confirmed exit state, triggers a 5s grace period, then kills the runner window. Always follow `send -Mode tui` with `wait <id>`.
-  **TUI sessions ended by manager force-kill are NOT guaranteed resumable.** The process
-  is terminated before Claude can flush session state. Use `-p` mode for workflows that
-  need reliable session resume across rounds.
-
-Both modes support `--resume` for session reuse. The system prompt (compression-resistant) is injected via `--system-prompt-file` from `prompt_templates/default/system.md` plus role-specific `system_prompt/*.md` files.
+This file is the quick-start map. Detailed behavior lives in the linked docs below.
 
 ## Quick Start
 
-The minimum v2 path requires a registered role (every `send` preflight validates `legal_state.json`):
+```powershell
+$tui = "F:\AI_project\Claude_worker_ver2\scripts\ClaudeTui.ps1"
+
+# Inspect available roles.
+& $tui role list
+& $tui role show coder
+
+# Launch a worker. Prefer -p mode for automated orchestration.
+& $tui send my-coder `
+  -Role coder `
+  -Mode p `
+  -Workspace "F:\path\to\project" `
+  -Prompt "Implement the bounded change described here."
+
+# Wait, inspect, and read results.
+& $tui wait my-coder
+& $tui agent my-coder
+& $tui result my-coder
+```
+
+Use `-InjectNormal <name>` only when you explicitly want a reusable normal prompt
+fragment:
 
 ```powershell
-# 1. Register a role (creates directory structure + legal_state.json)
-& $tui role register my-role
-
-# 2. (Optional) Add role prompt files — edit directly on disk:
-#    prompt_templates/role/my-role/system_prompt/*.md   <- role rules
-#    prompt_templates/role/my-role/header_prompt/*.md   <- role persona
-#    prompt_templates/role/my-role/normal_prompt/*.md   <- -InjectNormal templates
-#
-#    Edit legal_state.json to add custom states if needed.
-
-# 3. Launch a worker with the registered role
-& $tui send my-agent -Role my-role -Prompt "Explain the project structure"
-
-# 4. Check results (state summary + optional result.md)
-& $tui agents                     # list all
-& $tui agent my-agent             # detail
-& $tui wait my-agent              # wait for completion
-& $tui result my-agent            # convenience viewer: state summary then result.md
-& $tui remove my-agent            # soft-delete
+& $tui send my-coder `
+  -Role coder `
+  -InjectNormal question-pass `
+  -Mode p `
+  -Prompt "Read the plan and surface hidden implementation decisions. Do not edit files."
 ```
 
-## CLI Commands
+## Essential Commands
 
-| Command | Description |
-|---------|-------------|
-| `send <id> -Prompt <p> [-Role r] [-Workspace w] [-FreshSession] [-TimeoutSeconds n] [-Model m] [-Mode tui\|p] [-InjectNormal <name>]` | Launch worker. `-Role` must be a registered v2 role. `-InjectNormal` injects a single `normal_prompt/<name>.md` template into the task body. |
-| `agents [--all]` | List with Worker State, Output State, current state, Session UUID. |
-| `agent <id>` | Full detail: status, session, PID, tasks. |
-| `wait any [<id> ...]` | Any agent (global or in subset). Returns JSON, marks `consumed`. |
-| `wait <id> [<id> ...]` | Wait until ALL specified finish. |
-| `wait all` | Wait until all running/finishing finish. |
-| `result <id>` | Convenience viewer. Prints state summary (from `.state` JSON): command ID, role, state, confirmed, updated_at, summary_message. Then prints `result.md` if available. Missing `result.md` is not an error. |
-| `remove <id>` | Soft-delete. Running/finishing rejected. |
-| `remove all [-k <id1> [<id2> ...]]` | Soft-delete all non-running/finishing agents. `-k` keeps listed agents. Use `-k` to protect agents you did not create. |
-| `role register <name> [-Force]` | Create v2 role: `system_prompt/`, `header_prompt/`, `normal_prompt/`, `legal_state.json`. Detail: [docs/roles.md](docs/roles.md). |
-| `role update\|list\|show\|unregister` | Role management. Detail: [docs/roles.md](docs/roles.md). |
+| Command | Use |
+|---------|-----|
+| `send <id> -Role <role> -Prompt <text> [-Workspace <path>] [-Mode p\|tui] [-FreshSession] [-InjectNormal <name>]` | Launch or resume a worker. |
+| `wait <id>` | Wait for a specific worker to finish. Note: sync side effects are global. |
+| `agent <id>` | Inspect one worker, including current task and state. |
+| `agents [--all]` | List workers. |
+| `result <id>` | Show state summary and optional `result.md`. |
+| `remove <id>` | Soft-delete one finished/failed worker. |
+| `role list/show/register/update/unregister` | Manage local roles. |
 
-### Busy Agent Handling
+## Role System At A Glance
 
-```
-[MANAGER] Agent 'my-coder' is currently BUSY
-  Worker   : running (37s elapsed)
-  Task     : Fix login page layout
-  New Task : Add rate limiting
+Roles are local, registered prompt/state contracts under:
 
-  [W] Wait   - queue, auto-start after current finishes
-  [C] Cancel - abort (default)
+```text
+prompt_templates/role/<role>/
+├── system_prompt/       # durable role rules
+├── header_prompt/       # short task preamble
+├── normal_prompt/       # explicit -InjectNormal fragments only
+└── legal_state.json     # allowed states + exit confirmation
 ```
 
-## Worker State and Completion
+Current role profiles for orchestrators:
 
-Workers report progress via `Update-WorkerState.ps1` — the **only** worker-facing lifecycle/state interface. There is no `.exit` signal, and `Complete-ClaudeTask.ps1` is not part of the worker protocol.
+| Role | Profile |
+|------|---------|
+| `coder` | [docs/role-profiles/coder/README.md](docs/role-profiles/coder/README.md) |
+| `explorer` | [docs/role-profiles/explorer/README.md](docs/role-profiles/explorer/README.md) |
+| `test` | [docs/role-profiles/test/README.md](docs/role-profiles/test/README.md) |
 
-### Calling Update-WorkerState
+Role profiles are human-facing usage notes. Prompt source files remain under
+`prompt_templates/role/` and are gitignored local runtime configuration.
 
-```
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<root>/scripts/Update-WorkerState.ps1" -AgentName "<agent>" -CommandId "<id>" -Role "<role>" --<legal-state>
-```
+## Lifecycle In One Paragraph
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `-AgentName` | Yes | Agent ID provided in the task header |
-| `-CommandId` | Yes | Command ID provided in the task header |
-| `-Role` | Yes | Must match the role assigned by the orchestrator |
-| `--<state>` | Yes | Exactly one legal state, e.g. `--running`, `--exit` |
-| `-Confirm` | No | Required only with `--exit` to actually write the exit state |
-| `-SummaryMessage` | No | Stored as `summary_message` in the state JSON |
+Workers report lifecycle state with `scripts/Update-WorkerState.ps1`. The authoritative
+completion signal is `.state` JSON with `state=exit` and `confirmed=true`. `result.md`
+is optional convenience output. `.exit` is not part of the v2 worker protocol. See the
+state and schema docs for exact fields and transitions.
 
-### State File
+## Recommended Orchestrator Pattern
 
-Each call writes `run/<agent>/.<command_id>.state` as JSON:
-```json
-{
-  "agent_id": "my-agent",
-  "command_id": "20260615-...",
-  "role": "my-role",
-  "state": "running",
-  "confirmed": false,
-  "updated_at": "2026-06-15T...",
-  "summary_message": "Optional summary"
-}
-```
+1. Choose the role from [docs/role-profiles/](docs/role-profiles/).
+2. Use `-p` mode unless you explicitly need an interactive TUI window.
+3. Put concrete project paths, scope, accepted facts, and acceptance criteria in the
+   task prompt.
+4. Use `-InjectNormal` only for a known reusable fragment such as `question-pass`.
+5. After completion, read `result <id>` and the relevant report/artifact.
+6. Use an independent reviewer for lifecycle, protocol, persistence, or shared-contract
+   changes.
 
-### Legal States
+## Important Safety Rules
 
-Default legal states are `running` and `exit`. Each role defines its legal states in `prompt_templates/role/<name>/legal_state.json`. The orchestrator may edit this file to add custom states. `send` preflight enforces that the role has a valid `legal_state.json`; `Update-WorkerState` validates every state transition against it (hard error on illegal state).
+- Do not use `remove all` in a shared manager unless you are deliberately cleaning a
+  known isolated environment.
+- Even `wait <specific-id>` runs global `Sync-All` and may process other orchestrators'
+  agents. Prefer explicit IDs and avoid `wait all`.
+- Prefer `-p` for reliable session reuse. TUI sessions killed by the manager after
+  confirmed exit are not guaranteed resumable.
+- Register roles before sending. `send` preflight validates `legal_state.json` and
+  `-InjectNormal` existence before creating or mutating agent entries.
+- Do not treat `result.md` as completion authority; use `.state`/`result <id>` state
+  summary.
 
-### Exit Confirmation Gate
+## Documentation Map
 
-Exiting requires two steps:
+Start here:
 
-1. `--exit` (without `-Confirm`): Prints the `exit_confirmation` checklist from `legal_state.json`. Does **not** write any state file.
-2. `--exit -Confirm`: Writes `state=exit, confirmed=true` in `.state` JSON. This is the **only authoritative completion signal**. The manager detects it and begins the cleanup/finishing flow.
-
-### Completion Authority
-
-The `.state` JSON file (`state=exit, confirmed=true`) is the single authority for task completion.
-
-- `result.md` — optional convenience artifact. Workers may write a summary here, but the orchestrator reads `.state` JSON for completion status. Missing `result.md` is not an error.
-- `done.json` — runner-generated artifact used internally to capture the Claude session UUID. Not part of the worker-facing protocol.
-
-## Role System (v2)
-
-### Directory Structure
-
-```
-prompt_templates/role/<name>/
-├── system_prompt/       <- Injected to --system-prompt-file (after default/system.md)
-├── header_prompt/       <- Injected to task preamble (after default/header.md)
-├── normal_prompt/       <- NOT auto-injected. Only via send -InjectNormal <name>
-└── legal_state.json     <- {"states":["running","exit"],"exit_confirmation":"..."}
-```
-
-### Key Behaviors
-
-- `role register <name>` creates all four items above. `-Force` overwrites.
-- `normal_prompt/` templates are never auto-injected. Use `send ... -InjectNormal <name>` to inject `normal_prompt/<name>.md` into the task body. Non-existent template -> hard error.
-- Multiple `.md` files in `system_prompt/` or `header_prompt/` are concatenated alphabetically.
-- Legal states are role-specific: orchestrator edits `legal_state.json` to add/remove states.
-- `role show <name>` displays legal_state.json content, directory listings, and available `-InjectNormal` templates.
-
-## Core Patterns
-
-### Minimal Send + Wait
-
-```powershell
-& $tui role register worker
-# Optionally add .md files to prompt_templates/role/worker/{system,header}_prompt/
-& $tui send my-agent -Role worker -Prompt "Implement X" -Workspace "F:/myapp"
-& $tui wait my-agent
-& $tui result my-agent
-```
-
-### Multi-Turn with Session Reuse
-
-```powershell
-& $tui send my-coder -Role worker -Prompt "Read docs. Write questions." -Workspace "F:/myapp"
-# orchestrator reads result, writes decisions to file...
-& $tui send my-coder -Role worker -Prompt "Read decisions. Implement." -Workspace "F:/myapp"
-```
-
-### Concurrent Multi-Worker
-
-```powershell
-& $tui send coder-a -Role worker -Prompt "..." -Workspace "F:/myapp"
-& $tui send coder-b -Role worker -Prompt "..." -Workspace "F:/myapp"
-
-while ($true) {
-    $done = & $tui wait any | ConvertFrom-Json
-    if (-not $done) { break }
-    & $tui result $done.agent_id
-    & $tui send $done.agent_id -Role worker -Prompt "Next..." -Workspace "F:/myapp"
-}
-```
-
-### Multi-Orchestrator
-
-```powershell
-# Orchestrator A
-& $tui send coder-a -Role worker -Prompt "..." -Workspace "F:/myapp"
-& $tui wait coder-a
-
-# Orchestrator B
-& $tui send coder-b -Role worker -Prompt "..." -Workspace "F:/myapp"
-& $tui wait coder-b
-```
-
-### Fresh Session / Long Tasks
-
-```powershell
-& $tui send new-agent -Role worker -Prompt "Fresh analysis" -FreshSession -Workspace "F:/myapp"
-& $tui send heavy -Role worker -Prompt "Full rewrite" -TimeoutSeconds 3600 -Workspace "F:/myapp"
-```
-
-## Reference
-
-| Topic | Doc |
-|-------|-----|
-| Current system state (one-page overview) | [docs/role-system-current-state.md](docs/role-system-current-state.md) |
-| Role system design (final, authoritative) | [docs/role-system-design.md](docs/role-system-design.md) |
+| Need | Doc |
+|------|-----|
+| Current status, verified features, known risks | [docs/role-system-current-state.md](docs/role-system-current-state.md) |
+| Pick an existing role | [docs/role-profiles/README.md](docs/role-profiles/README.md) |
+| Create a new role | [docs/role-creation-guide.md](docs/role-creation-guide.md) |
+| Understand role prompt layers and state model | [docs/role-system-design.md](docs/role-system-design.md) |
 | Role CLI reference | [docs/roles.md](docs/roles.md) |
-| agents.json schema, status lifecycle, Sync functions | [docs/agents-json-schema.md](docs/agents-json-schema.md) |
-| Session UUID capture & resume | [docs/session-uuid-lifecycle.md](docs/session-uuid-lifecycle.md) |
-| Store vs Run directory layout | [docs/store-vs-run.md](docs/store-vs-run.md) |
+| `agents.json`, status tags, queue rules, Sync functions | [docs/agents-json-schema.md](docs/agents-json-schema.md) |
+| Session UUID capture and resume behavior | [docs/session-uuid-lifecycle.md](docs/session-uuid-lifecycle.md) |
+| Store vs run directory layout | [docs/store-vs-run.md](docs/store-vs-run.md) |
+| Role-system smoke plan and prior execution | [docs/test-role-smoke-plan.md](docs/test-role-smoke-plan.md) |
+| Verification and worker reports | [docs/worker-reports/](docs/worker-reports/) |
 
-## Rules for Orchestrators
+## Creating Roles
 
-1. **Register a role before sending.** Every `send` validates that the role's `legal_state.json` exists and contains at minimum `running` and `exit`. Preflight runs before any agent entry is created or modified — a failed send leaves no trace in `agents.json` and creates no run/store directories.
-2. **Do not reuse the same agent_id concurrently.** Prompt confirms. Use different IDs for parallel work.
-3. **Prefer `wait any` for concurrency.** Or `wait id1 id2 ...` to scope to your subset.
-4. **Read results via CLI, not internal files.** Use `result` (state summary), then `agent` or `agents`.
-5. **Session reuse is automatic.** Same agent_id = same session. `-FreshSession` resets.
-6. **Prefer `-p` mode for multi-turn session resume.** TUI sessions ended by manager force-kill
-   (confirmed exit → 5s grace → kill) are NOT guaranteed resumable — Claude does not get a
-   chance to flush session state. UUID existence alone does NOT mean the session is resumable.
-   See [docs/session-uuid-lifecycle.md](docs/session-uuid-lifecycle.md).
-7. **Write decisions to files.** Workers read them next turn.
-8. **Match timeout to task size.** Quick: 300-600s. Implementation: 600-1200s. Heavy: 1800-3600s.
-9. **Check Worker State before consuming result.** `failed` or `timeout` means the task did not complete normally.
-10. **TUI workers won't auto-close.** Workers must call `Update-WorkerState --exit -Confirm`. Manager detects `state=exit, confirmed=true` in `.state` JSON -> finishing -> 5s grace -> kill. Always follow `send -Mode tui` with `wait <id>`.
-11. **`remove all` skips running/finishing agents.** Use `-k` to keep agents you did not create. Do not blindly `remove all` in shared environments — it affects all orchestrators. Soft-delete preserves `store/` data.
-12. **`wait` and `Sync-All` are global.** Even when you `wait <specific-agent-id>`, the manager runs a full `Sync-All` cycle (ReadState → KillPending → DoneToManager → DeadToFailed). This means a `wait` for your agent can process state transitions (e.g., exit/finishing) of **other** agents managed by other orchestrators. Plan for this when sharing a manager: prefer scoped `wait <id1> <id2>` over `wait all`, and never `remove all` in shared environments.
+Short version:
+
+```powershell
+& $tui role register reviewer
+& $tui role show reviewer
+```
+
+Then add prompt files and a profile:
+
+```text
+prompt_templates/role/reviewer/system_prompt/*.md
+prompt_templates/role/reviewer/header_prompt/*.md
+prompt_templates/role/reviewer/normal_prompt/*.md
+prompt_templates/role/reviewer/legal_state.json
+docs/role-profiles/reviewer/README.md
+```
+
+Default roles should be project-independent collaboration abstractions. Project-specific
+facts belong in task prompts or, when truly reusable, explicit normal templates. If a
+role is intentionally project-private, mark that clearly in its profile and description.
+
+See [docs/role-creation-guide.md](docs/role-creation-guide.md) for the full checklist.

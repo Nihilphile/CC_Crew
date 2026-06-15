@@ -5,6 +5,10 @@ They define durable authority, boundaries, evidence standards, and observable wo
 states. Project paths, concrete objectives, acceptance criteria, and one-off
 instructions belong in the task prompt instead.
 
+Each role should also have a short orchestrator-facing profile under
+`docs/role-profiles/<role>/README.md`. The profile is a usage guide, not prompt
+source, and is not injected into workers.
+
 ## Start With The Contract
 
 Before registering a role, answer these questions:
@@ -18,6 +22,23 @@ Before registering a role, answer these questions:
 
 If these answers depend on one repository or one task, they are probably task-prompt
 content rather than role content.
+
+## Project Independence
+
+Default roles should be engineering- or collaboration-level abstractions, not project
+feature descriptions. A role such as `coder`, `explorer`, or `reviewer` should be usable
+across repositories.
+
+Put project-specific facts in one of these places instead:
+
+- the task prompt;
+- project-local instructions such as `AGENTS/`;
+- normal templates when a recurring project-local procedure has proven reusable.
+
+If you intentionally create a project-private role, mark it clearly in both the role
+profile and the role description, for example `private: nameless-game skill tester`.
+Private roles may encode project-specific vocabulary and constraints, but should not be
+mistaken for generic roles.
 
 ## Choose The Prompt Layer
 
@@ -54,6 +75,23 @@ Place Markdown files directly in the three prompt directories. Files in the syst
 and header directories are concatenated alphabetically, so use numeric prefixes when
 ordering matters.
 
+Then create the orchestrator-facing profile:
+
+```text
+docs/role-profiles/explorer/README.md
+```
+
+The profile should briefly document:
+
+- when to use the role;
+- when not to use it;
+- legal states and typical flows;
+- available normal templates;
+- expected output types;
+- an orchestrator checklist for sending tasks.
+
+Do not copy the full prompt files into the profile.
+
 ## Design Legal States
 
 `running` and `exit` are mandatory. Add a state only when it gives the orchestrator
@@ -72,6 +110,13 @@ For every custom state, the system prompt should say:
 The exit confirmation should test the role's ending obligations without assuming a
 specific artifact such as `result.md`.
 
+Prefer a dedicated system prompt file for state semantics, such as
+`system_prompt/20-state-semantics.md`. Keep state definitions close to the role so the
+worker knows what each state means and when to call `Update-WorkerState.ps1`.
+
+Use a short header reminder, such as `header_prompt/10-state-reminder.md`, to remind the
+worker to update lifecycle state without repeating the full state manual.
+
 Example:
 
 ```json
@@ -89,6 +134,10 @@ Example:
 automatic part of the role. A template should represent a recurring mode such as a
 question pass, architecture trace, runtime probe, implementation pass, or review
 checklist.
+
+Normal templates may be more project-specific than the base role when the template is
+selected explicitly and its name makes the scope clear. Still avoid hiding one-off task
+facts in normal templates; if it is only useful once, keep it in the task prompt.
 
 ```powershell
 & $tui send explorer-1 `
@@ -117,6 +166,8 @@ Then verify the role with a bounded smoke:
    exit JSON.
 7. Role mismatch is rejected.
 8. Completion does not depend on `result.md` or an `.exit` file.
+9. The role profile gives enough information for an orchestrator to choose the role
+   without opening the prompt source files.
 
 ## Common Mistakes
 
@@ -127,6 +178,8 @@ Then verify the role with a bounded smoke:
 - Adding states without defining their transition semantics.
 - Making `result.md` or another fixed artifact part of the exit contract.
 - Treating registration alone as proof that prompt injection and state validation work.
+- Forgetting to create or update `docs/role-profiles/<role>/README.md`.
+- Creating a generic-looking role that actually contains project-private assumptions.
 
 ## Storage And Sharing
 
@@ -136,4 +189,3 @@ machine but is not automatically distributed with the repository.
 
 If roles should ship as built-in assets, define an explicit tracked role-pack location
 or packaging/import mechanism rather than relying on local registration state.
-

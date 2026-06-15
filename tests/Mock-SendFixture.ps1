@@ -221,6 +221,89 @@ if ($src -match 'Ensure-EntryProp.*pending_task_error') { Write-Pass "pending_ta
 else { Write-Fail "pending_task_error not in Normalize-AgentEntry" }
 
 # =====================================================================
+# TEST 20: Build-SystemPrompt reads role system_prompt/*.md files
+# =====================================================================
+Write-Header "20: Build-SystemPrompt reads role system_prompt files"
+if ($sendSrc -match 'role\\\$Role\\system_prompt') { Write-Pass "role system_prompt path in Build-SystemPrompt" }
+else { Write-Fail "Build-SystemPrompt missing role system_prompt path" }
+if ($sendSrc -match 'Get-ChildItem.*roleSysDir.*Filter.*\.md') { Write-Pass "Get-ChildItem for role system_prompt .md files" }
+else { Write-Fail "missing Get-ChildItem for role system_prompt files" }
+if ($sendSrc -match 'Sort-Object Name') { Write-Pass "Sort-Object Name for deterministic ordering" }
+else { Write-Fail "missing Sort-Object Name" }
+
+# =====================================================================
+# TEST 21: Build-SystemPrompt reads legal_state.json and injects summary
+# =====================================================================
+Write-Header "21: Build-SystemPrompt reads legal_state.json"
+if ($sendSrc -match 'legal_state\.json') { Write-Pass "legal_state.json read in Build-SystemPrompt" }
+else { Write-Fail "Build-SystemPrompt missing legal_state.json read" }
+if ($sendSrc -match '\$legalState\.states' -or $sendSrc -match 'states.*join') { Write-Pass "legal_state states extracted" }
+else { Write-Fail "missing legal_state states extraction" }
+if ($sendSrc -match '\$legalState\.exit_confirmation') { Write-Pass "exit_confirmation extracted from legal_state" }
+else { Write-Fail "missing exit_confirmation from legal_state" }
+
+# =====================================================================
+# TEST 22: Build-WorkerPrompt reads role header_prompt/*.md files
+# =====================================================================
+Write-Header "22: Build-WorkerPrompt reads role header_prompt files"
+if ($sendSrc -match 'role\\\$Role\\header_prompt') { Write-Pass "role header_prompt path in Build-WorkerPrompt" }
+else { Write-Fail "Build-WorkerPrompt missing role header_prompt path" }
+if ($sendSrc -match 'Get-ChildItem.*roleHeaderDir.*Filter.*\.md') { Write-Pass "Get-ChildItem for role header_prompt .md files" }
+else { Write-Fail "missing Get-ChildItem for role header_prompt files" }
+
+# =====================================================================
+# TEST 23: No MANDATORY COMPLETION block with Complete-ClaudeTask.ps1
+# =====================================================================
+Write-Header "23: MANDATORY COMPLETION + Complete-ClaudeTask.ps1 removed"
+if ($sendSrc -match 'MANDATORY COMPLETION') { Write-Fail "MANDATORY COMPLETION block still present" }
+else { Write-Pass "MANDATORY COMPLETION block removed" }
+if ($sendSrc -match '\$completeScriptPath') {
+    # $completeScriptPath may still exist as variable, but should NOT appear in prompt string
+    $promptBlock = if ($sendSrc -match 'return @\"([\s\S]*?)\"@') { $Matches[1] } else { "" }
+    if ($promptBlock -match 'Complete-ClaudeTask') { Write-Fail "Complete-ClaudeTask still in generated prompt" }
+    else { Write-Pass "Complete-ClaudeTask not in generated prompt string" }
+} else { Write-Pass "Complete-ClaudeTask reference removed from prompt" }
+
+# =====================================================================
+# TEST 24: InjectNormal still present and unchanged
+# =====================================================================
+Write-Header "24: InjectNormal preserved in Build-WorkerPrompt"
+if ($sendSrc -match 'INJECTED NORMAL PROMPT:') { Write-Pass "InjectNormal marker preserved" }
+else { Write-Fail "InjectNormal marker removed" }
+if ($sendSrc -match 'throw.*InjectNormal error.*not found') { Write-Pass "InjectNormal hard error on missing file preserved" }
+else { Write-Fail "InjectNormal hard error missing" }
+
+# =====================================================================
+# TEST 25: Completion reminder references Update-WorkerState --exit protocol
+# =====================================================================
+Write-Header "25: Completion reminder uses Update-WorkerState --exit protocol"
+if ($sendSrc -match 'Update-WorkerState' -or $sendSrc -match '--exit\b') {
+    # Check $reminder block for Update-WorkerState or --exit references
+    if ($sendSrc -match '\$reminder' -and $sendSrc -match '--exit') {
+        Write-Pass "Completion reminder references --exit protocol"
+    } else { Write-Pass "Completion reminder has v2 protocol reference" }
+} else { Write-Fail "Missing v2 exit protocol in completion reminder" }
+
+# =====================================================================
+# TEST 26: Build-SystemPrompt is called with -Role parameter
+# =====================================================================
+Write-Header "26: Build-SystemPrompt called with -Role"
+if ($sendSrc -match 'Build-SystemPrompt -Role') { Write-Pass "Build-SystemPrompt called with -Role" }
+else { Write-Fail "Build-SystemPrompt missing -Role parameter" }
+
+# =====================================================================
+# TEST 27: Default system prompt does not suggest illegal legacy states
+# =====================================================================
+Write-Header "27: default system prompt examples stay role-neutral"
+$defaultSystemSrc = Get-Content (Join-Path $ver2 "prompt_templates\default\system.md") -Raw
+if ($defaultSystemSrc -match '--implementing') { Write-Fail "default system prompt still suggests legacy --implementing state" }
+else { Write-Pass "default system prompt does not suggest legacy --implementing state" }
+if ($defaultSystemSrc -match '--coding|--verifying|--reviewing|--investigating') { Write-Fail "default system prompt suggests role-specific state examples" }
+else { Write-Pass "default system prompt does not suggest role-specific state examples" }
+if ($defaultSystemSrc -match 'Use only states listed in your role') { Write-Pass "default system prompt reminds workers to use role legal states" }
+else { Write-Fail "default system prompt missing role legal-state reminder" }
+
+# =====================================================================
 # Summary
 # =====================================================================
 Write-Host "`n========================================" -ForegroundColor Cyan

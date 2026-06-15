@@ -223,16 +223,53 @@ function Stop-TaskProcess {
 $templatesDir = Join-Path $skillRoot "prompt_templates\default"
 
 function Build-SystemPrompt {
+    param([string]$Role)
+    # 1. Read default system prompt
     $sysPath = Join-Path $templatesDir "system.md"
+    $parts = [System.Collections.ArrayList]::new()
     if (Test-Path -LiteralPath $sysPath -PathType Leaf) {
-        return (Get-Content -LiteralPath $sysPath -Raw -Encoding UTF8).Trim()
+        [void]$parts.Add((Get-Content -LiteralPath $sysPath -Raw -Encoding UTF8).Trim())
     }
-    return ""
+
+    # 2. Read and concatenate role system_prompt/*.md files (sorted by filename)
+    $roleSysDir = Join-Path $skillRoot "prompt_templates\role\$Role\system_prompt"
+    if (Test-Path -LiteralPath $roleSysDir -PathType Container) {
+        $roleSysFiles = Get-ChildItem -LiteralPath $roleSysDir -Filter "*.md" |
+            Sort-Object Name
+        foreach ($f in $roleSysFiles) {
+            $content = (Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8).Trim()
+            if ($content) {
+                [void]$parts.Add("")
+                [void]$parts.Add($content)
+            }
+        }
+    }
+
+    # 3. Read legal_state.json and append a compact summary (states + exit_confirmation)
+    $legalStatePath = Join-Path $skillRoot "prompt_templates\role\$Role\legal_state.json"
+    if (Test-Path -LiteralPath $legalStatePath -PathType Leaf) {
+        try {
+            $legalState = Get-Content -LiteralPath $legalStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $states = $legalState.states -join ', '
+            $exitConfirm = $legalState.exit_confirmation
+            if ($states -or $exitConfirm) {
+                [void]$parts.Add("")
+                $legalBlock = "`n---`n`n## Legal States for Role: $Role`n`n"
+                if ($states) { $legalBlock += "Allowed states: $states`n`n" }
+                if ($exitConfirm) { $legalBlock += "Exit confirmation prompt: $exitConfirm`n" }
+                [void]$parts.Add($legalBlock.TrimEnd())
+            }
+        } catch {
+            Write-Host "[WARN] Failed to parse legal_state.json for role '$Role': $_"
+        }
+    }
+
+    return ($parts -join "`n").Trim()
 }
 
 function Build-WorkerPrompt {
     param([string]$UserPrompt)
-    # Read header template, replace role placeholder
+    # 1. Read default header template, replace role placeholder
     $headerPath = Join-Path $templatesDir "header.md"
     $header = "[worker]`nYou are a $Role agent. Execute the task, then complete."
     if (Test-Path -LiteralPath $headerPath -PathType Leaf) {
@@ -240,7 +277,32 @@ function Build-WorkerPrompt {
         $header = $header -replace '~~ROLE~~', $Role
     }
 
-    # --- InjectNormal: load and prepend normal_prompt template ---
+    # 2. Read role header_prompt/*.md files (sorted by filename) and append
+    $roleHeaderDir = Join-Path $skillRoot "prompt_templates\role\$Role\header_prompt"
+    if (Test-Path -LiteralPath $roleHeaderDir -PathType Container) {
+        $roleHeaderFiles = Get-ChildItem -LiteralPath $roleHeaderDir -Filter "*.md" |
+            Sort-Object Name
+        foreach ($f in $roleHeaderFiles) {
+            $content = (Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8).Trim()
+            if ($content) {
+                $header = "$header`n`n$content"
+            }
+        }
+    }
+
+    # 3. Build completion reminder (brief, v2 protocol)
+    $reminder = @"
+
+Automated pipeline. No confirmation needed. No exploring beyond the task.
+
+COMPLETION — when your work is done:
+- Writing a summary to: $resultPath is optional but helpful.
+- The authoritative completion signal is Update-WorkerState.ps1:
+  1. First call: --exit (prints checklist, no state change).
+  2. Then call: --exit -Confirm -SummaryMessage "<your summary>".
+"@
+
+    # 4. InjectNormal: load and prepend normal_prompt template (unchanged behavior)
     $injectBlock = ""
     if ($InjectNormal) {
         $normalFile = Join-Path $skillRoot "prompt_templates\role\$Role\normal_prompt\$InjectNormal.md"
@@ -263,12 +325,7 @@ $normalContent
 
     return @"
 $header
-Automated pipeline. No confirmation needed. No exploring beyond the task.
-
-MANDATORY COMPLETION — after the task, do these steps:
-1. Write a summary of what you did to: $resultPath
-2. Call: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$completeScriptPath" -AgentName "$AgentName" -CommandId "$commandId" -ResultPath "$resultPath" -DonePath "$donePath"
-If task failed: add -State failed -ExitCode 1. Step 2 is non-negotiable.
+$reminder
 $injectBlock
 TASK:
 $UserPrompt
@@ -410,7 +467,7 @@ Set-Content -LiteralPath $promptPath -Value $fullPrompt -Encoding UTF8
 Write-Host "Prompt written: $promptPath ($($fullPrompt.Length) chars)"
 
 # Build system prompt (runtime contract, injected via --append-system-prompt) and write to file
-$systemPrompt = Build-SystemPrompt
+$systemPrompt = Build-SystemPrompt -Role $Role
 $systemPromptPath = Join-Path $runRoot "run-command-$commandId.system.txt"
 if ($systemPrompt) {
     Set-Content -LiteralPath $systemPromptPath -Value $systemPrompt -Encoding UTF8
