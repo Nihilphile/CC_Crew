@@ -1,14 +1,14 @@
-# Claude Worker v2
+# CC_Crew
 
-File-protocol multi-agent orchestration for Claude Code. Delegate bounded tasks to worker agents in visible PowerShell windows, with session reuse and v2 role-based layered prompt injection.
+Multi-agent manager for Claude Code. Delegate bounded tasks to worker agents by role, scope them by group, and track lifecycle through JSON state — file-protocol, no daemon.
 
 [![GPLv3 License](https://img.shields.io/badge/license-GPL-blue.svg)](LICENSE)
 
 ## Install
 
 ```powershell
-git clone https://github.com/Nihilphile/Claude_worker_ver1.git
-cd Claude_worker_ver1
+git clone https://github.com/Nihilphile/CC_Crew.git
+cd CC_Crew
 ```
 
 **Prerequisites:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and API-configured.
@@ -20,7 +20,7 @@ Then set your default workspace (the folder workers operate in):
 echo '{"default_workspace": "F:/path/to/your/project"}' > manager/config.json
 
 # Option B: Environment variable
-$env:CLAUDE_WORKER_DEFAULT_WS = "F:/path/to/your/project"
+$env:CC_CREW_DEFAULT_WS = "F:/path/to/your/project"
 ```
 
 ## Quick Start

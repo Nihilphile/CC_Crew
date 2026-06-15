@@ -1,4 +1,4 @@
-# === ClaudeTui.ps1 — Manager CLI for Claude Workers ===
+# === ClaudeTui.ps1 — CC_Crew Manager CLI ===
 # status is an array: @("running") | @("finished","ready") | @("finished","consumed") | @("failed") | @("deleted") | @("finishing")
 # Display: Worker State column + Output State column
 
@@ -92,7 +92,8 @@ if (-not $Workspace) {
     if (Test-Path $configPath) {
         try { $cfg = Get-Content $configPath -Raw | ConvertFrom-Json; $Workspace = $cfg.default_workspace } catch {}
     }
-    if (-not $Workspace) { $Workspace = $env:CLAUDE_WORKER_DEFAULT_WS }
+    if (-not $Workspace) { $Workspace = $env:CC_CREW_DEFAULT_WS }
+    if (-not $Workspace) { $Workspace = $env:CLAUDE_WORKER_DEFAULT_WS }  # legacy compat
     if (-not $Workspace) { $Workspace = (Get-Location).Path }
 }
 
@@ -117,7 +118,7 @@ if ($Command -in @("role") -and $scriptArgs.Count -gt 1) {
 }
 
 if (-not $Command) {
-    Write-Host "ClaudeTui -- Claude Worker Manager"
+    Write-Host "ClaudeTui -- CC_Crew Manager"
     Write-Host ""
     Write-Host "Commands: send, agents, agent, wait, result, remove, role"
     Write-Host "  send   <agent_id> -Prompt <p> [-Role <r>] [-Workspace <w>] [-Group <g>] [-FreshSession] [-TimeoutSeconds <n>] [-Model <name>] [-Mode tui|p] [-InjectNormal <name>]"

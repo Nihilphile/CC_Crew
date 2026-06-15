@@ -1,20 +1,20 @@
 ---
-name: claude-worker
-description: Delegate bounded tasks to Claude Code worker agents through manager-layer file-protocol orchestration. Dual-mode runners (-p/TUI), v2 role registry, session reuse, JSON state tracking.
+name: CC_Crew
+description: Multi-agent manager for Claude Code. Role-based dispatch, group-scoped isolation, JSON lifecycle tracking. Dual-mode (-p/TUI), file-protocol.
 ---
 
-# Claude Worker v2
+# CC_Crew
 
-Claude Worker v2 is a file-protocol multi-agent manager for launching Claude Code
-workers with registered roles, reusable prompt fragments, session reuse, and JSON
-lifecycle state.
+CC_Crew is a file-protocol multi-agent manager for Claude Code. Dispatch workers
+by role, scope them by group, track lifecycle via JSON state — all through a
+single CLI.
 
 This file is the quick-start map. Detailed behavior lives in the linked docs below.
 
 ## Quick Start
 
 ```powershell
-$tui = "F:\AI_project\Claude_worker_ver2\scripts\ClaudeTui.ps1"
+$tui = "F:\AI_project\CC_Crew\scripts\ClaudeTui.ps1"
 
 # Inspect available roles.
 & $tui role list

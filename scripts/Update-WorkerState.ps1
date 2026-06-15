@@ -227,7 +227,7 @@ $dir = Split-Path -Parent $statePath
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $stateObj | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $statePath -Encoding UTF8
 
-Write-Host "[CLAUDE_WORKER_STATE] $CommandId state=$stateArg confirmed=$($stateObj.confirmed)"
+Write-Host "[CC_CREW_STATE] $CommandId state=$stateArg confirmed=$($stateObj.confirmed)"
 
 # v2: NO .exit signal. Manager lifecycle is driven solely by .state JSON (state=exit, confirmed=true).
 

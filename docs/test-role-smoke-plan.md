@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This plan validates Claude Worker v2 as an integrated system rather than testing only
+This plan validates CC_Crew as an integrated system rather than testing only
 individual PowerShell functions. The locally registered `test` role is a protocol
 probe with deterministic injection markers and observable legal states.
 
@@ -101,7 +101,7 @@ Final JSON must contain:
 - state_calls (array in execution order)
 - validation_passed (boolean)
 
-Do not write result.md. Do not modify the Claude Worker repository.
+Do not write result.md. Do not modify the CC_Crew repository.
 '@
 ```
 

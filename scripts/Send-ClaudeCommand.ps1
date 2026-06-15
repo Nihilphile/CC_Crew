@@ -434,7 +434,7 @@ $resultPath = Join-Path $resultsDir "$commandId.result.md"
 $runnerPath = Join-Path $runRoot "run-command-$commandId.ps1"
 $promptPath = Join-Path $runRoot "run-command-$commandId.prompt.txt"
 $transcriptPath = Join-Path $logsDir "$commandId.transcript.log"
-$windowTitle = "Claude Worker - $safeAgentName - $commandId"
+$windowTitle = "CC_Crew - $safeAgentName - $commandId"
 $launchedAt = Get-Date
 
 Write-Host "CommandId=$commandId"
@@ -508,12 +508,12 @@ chcp 65001 | Out-Null
 
 `$env:NO_COLOR = "1"
 `$env:CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1"
-`$env:CLAUDE_WORKER_AGENT = "$AgentName"
-`$env:CLAUDE_WORKER_COMMAND_ID = "$commandId"
-`$env:CLAUDE_WORKER_LIVE_ROOT = "$storeRoot"
+`$env:CC_CREW_AGENT = "$AgentName"
+`$env:CC_CREW_COMMAND_ID = "$commandId"
+`$env:CC_CREW_LIVE_ROOT = "$storeRoot"
 
 Write-Host "========================================"
-Write-Host "  Claude Worker [TUI MODE]"
+Write-Host "  CC_Crew [TUI MODE]"
 Write-Host "  Agent : $AgentName"
 Write-Host "  Cmd   : $commandId"
 Write-Host "  Role  : $Role"
@@ -570,12 +570,12 @@ chcp 65001 | Out-Null
 
 `$env:NO_COLOR = "1"
 `$env:CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1"
-`$env:CLAUDE_WORKER_AGENT = "$AgentName"
-`$env:CLAUDE_WORKER_COMMAND_ID = "$commandId"
-`$env:CLAUDE_WORKER_LIVE_ROOT = "$storeRoot"
+`$env:CC_CREW_AGENT = "$AgentName"
+`$env:CC_CREW_COMMAND_ID = "$commandId"
+`$env:CC_CREW_LIVE_ROOT = "$storeRoot"
 
 Write-Host "========================================"
-Write-Host "  Claude Worker"
+Write-Host "  CC_Crew"
 Write-Host "  Agent : $AgentName"
 Write-Host "  Cmd   : $commandId"
 Write-Host "  Role  : $Role"
@@ -634,7 +634,7 @@ Set-JsonProp -Obj $status -N "updated_at" -V (Get-Date).ToString("o")
 $status | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $statusPath -Encoding UTF8
 Update-AgentRegistry -Status $status
 
-Write-Host "Launched Claude Worker"
+Write-Host "Launched CC_Crew"
 Write-Host "AgentName=$AgentName"
 Write-Host "CommandId=$commandId"
 Write-Host "PID=$($proc.Id)"
