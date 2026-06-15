@@ -46,6 +46,9 @@ if (-not $Mode) { $Mode = Get-Arg "-M" }
 $ShowAll = Has-Flag "--all"
 $InjectNormal = Get-Arg "-InjectNormal"
 if (-not $InjectNormal) { $InjectNormal = "" }
+$Group = Get-Arg "-Group"
+if (-not $Group) { $Group = Get-Arg "-g" }
+if (-not $Group) { $Group = "" }
 
 # For remove all -k: collect agent IDs to keep
 $KeepIds = @()
@@ -102,12 +105,12 @@ if (-not $Command) {
     Write-Host "ClaudeTui -- Claude Worker Manager"
     Write-Host ""
     Write-Host "Commands: send, agents, agent, wait, result, remove, role"
-    Write-Host "  send   <agent_id> -Prompt <p> [-Role <r>] [-Workspace <w>] [-FreshSession] [-TimeoutSeconds <n>] [-Model <name>] [-Mode tui|p] [-InjectNormal <name>]"
-    Write-Host "  agents [--all]"
-    Write-Host "  agent  <agent_id>"
-    Write-Host "  wait   any [<agent_id> ...] | <agent_id> [<agent_id> ...] | all"
-    Write-Host "  result <agent_id>"
-    Write-Host "  remove <agent_id> | all [-k <id1> [<id2> ...]]"
+    Write-Host "  send   <agent_id> -Prompt <p> [-Role <r>] [-Workspace <w>] [-Group <g>] [-FreshSession] [-TimeoutSeconds <n>] [-Model <name>] [-Mode tui|p] [-InjectNormal <name>]"
+    Write-Host "  agents [--all] [-Group <g>]"
+    Write-Host "  agent  <agent_id> [-Group <g>]"
+    Write-Host "  wait   any [<agent_id> ...] | <agent_id> [<agent_id> ...] | all [-Group <g>]"
+    Write-Host "  result <agent_id> [-Group <g>]"
+    Write-Host "  remove <agent_id> | all [-k <id1> [<id2> ...]] [-Group <g>]"
     Write-Host "  role   register <name> [-Force]"
     Write-Host "  role   update <name> [-Files <path> [<path> ...]] [-StateFile <path>]"
     Write-Host "  role   list | show <name> | unregister <name>"
@@ -181,6 +184,16 @@ function Find-ActiveAgent {
     return $null
 }
 
+# Group filtering (on): returns $true when entry matches active group or no filter is set.
+# When $ActiveGroup is empty (""), all entries match.
+function Test-GroupFilter {
+    param($Entry)
+    if (-not $ActiveGroup) { return $true }
+    if (-not $Entry.PSObject.Properties["group"] -or -not $Entry.group) { return $false }
+    return $Entry.group -eq $ActiveGroup
+}
+$ActiveGroup = ""
+
 function New-AgentEntry {
     param([string]$AgentId)
     $now = (Get-Date).ToString("o")
@@ -193,6 +206,7 @@ function New-AgentEntry {
         pid          = $null
         current_task = $null
         pending_task = $null
+        group        = $null
         created_at   = $now
         updated_at   = $now
         deleted_at   = $null
@@ -219,6 +233,7 @@ function Normalize-AgentEntry {
     Ensure-EntryProp $Entry "pending_task_error" $null
     Ensure-EntryProp $Entry "created_at" (Get-Date).ToString("o")
     Ensure-EntryProp $Entry "updated_at" (Get-Date).ToString("o")
+    Ensure-EntryProp $Entry "group" $null
     Ensure-EntryProp $Entry "deleted_at" $null
 }
 
@@ -361,7 +376,9 @@ function Sync-DoneToManager {
     if ($changed) { Save-Agents -Agents $Agents }
     foreach ($as in $autoStarts) {
         $pending = $as.entry.pending_task
-        Write-Host "[AUTO-CONTINUE] Queued task for $($as.entry.agent_id) starting now..."
+        if (Test-GroupFilter $as.entry) {
+            Write-Host "[AUTO-CONTINUE] Queued task for $($as.entry.agent_id) starting now..."
+        }
         $pendingInjectNormal = if ($pending.PSObject.Properties["inject_normal"] -and $pending.inject_normal) { $pending.inject_normal } else { "" }
         try {
             Invoke-SendInternal -AgentId $as.entry.agent_id -Prompt $pending.prompt -Role $pending.role -Model $pending.model -InjectNormal $pendingInjectNormal
@@ -374,7 +391,9 @@ function Sync-DoneToManager {
                 Save-Agents -Agents $Agents
             }
         } catch {
-            Write-Host "[AUTO-CONTINUE] FAILED: launch/preflight threw; pending_task preserved. Error: $_"
+            if (Test-GroupFilter $as.entry) {
+                Write-Host "[AUTO-CONTINUE] FAILED: launch/preflight threw; pending_task preserved. Error: $_"
+            }
             # Do NOT clear pending_task. Record diagnostic.
             Invalidate-Cache; $Agents = Read-Agents
             $foundAfter = Find-ActiveAgent -TargetAgentId $as.entry.agent_id -AgentsDict $Agents
@@ -421,7 +440,9 @@ function Sync-ReadState {
                 }
             } catch {
                 # Not valid JSON — skip this state file
-                Write-Host ("[STATE] {0}: .state file is not valid JSON, skipping" -f $entry.agent_id)
+                if (Test-GroupFilter $entry) {
+                    Write-Host ("[STATE] {0}: .state file is not valid JSON, skipping" -f $entry.agent_id)
+                }
                 continue
             }
 
@@ -439,7 +460,9 @@ function Sync-ReadState {
                 $roleDir = Join-Path $roleTemplatesDir $roleName
                 $legalPath = Join-Path $roleDir "legal_state.json"
                 if (-not (Test-Path -LiteralPath $legalPath -PathType Leaf)) {
-                    Write-Host ("[STATE] PROTOCOL ERROR: {0} role '{1}' has no legal_state.json" -f $entry.agent_id, $roleName)
+                    if (Test-GroupFilter $entry) {
+                        Write-Host ("[STATE] PROTOCOL ERROR: {0} role '{1}' has no legal_state.json" -f $entry.agent_id, $roleName)
+                    }
                     # Do NOT advance state; skip this agent until role is fixed
                     continue
                 }
@@ -447,7 +470,9 @@ function Sync-ReadState {
                     $legalJson = Get-Content -LiteralPath $legalPath -Raw -Encoding UTF8 | ConvertFrom-Json
                     $legalStates = @($legalJson.states | ForEach-Object { [string]$_ })
                     if ($parsedState -notin $legalStates) {
-                        Write-Host ("[STATE] HARD ERROR: {0} set illegal state '{1}' (legal: {2}). State NOT applied." -f $entry.agent_id, $parsedState, ($legalStates -join ', '))
+                        if (Test-GroupFilter $entry) {
+                            Write-Host ("[STATE] HARD ERROR: {0} set illegal state '{1}' (legal: {2}). State NOT applied." -f $entry.agent_id, $parsedState, ($legalStates -join ', '))
+                        }
                         # Record the error but do NOT update current_state
                         if (-not $entry.PSObject.Properties["state_error"]) {
                             $entry | Add-Member -NotePropertyName "state_error" -NotePropertyValue $null
@@ -458,16 +483,20 @@ function Sync-ReadState {
                         continue
                     }
                 } catch {
-                    Write-Host ("[STATE] ERROR: Could not parse legal_state.json for role '$roleName'")
+                    if (Test-GroupFilter $entry) {
+                        Write-Host ("[STATE] ERROR: Could not parse legal_state.json for role '$roleName'")
+                    }
                     continue
                 }
 
                 $entry.current_state = $parsedState
                 $entry.updated_at = (Get-Date).ToString("o")
 
-                Write-Host ("[STATE] {0}: {1} -> {2}" -f $entry.agent_id, $old, $parsedState)
-                if ($stateSummary) {
-                    Write-Host ("[STATE]   summary: {0}" -f $stateSummary)
+                if (Test-GroupFilter $entry) {
+                    Write-Host ("[STATE] {0}: {1} -> {2}" -f $entry.agent_id, $old, $parsedState)
+                    if ($stateSummary) {
+                        Write-Host ("[STATE]   summary: {0}" -f $stateSummary)
+                    }
                 }
                 $changed = $true
 
@@ -476,7 +505,9 @@ function Sync-ReadState {
                     $entry.status = @("finishing")
                     $entry | Add-Member -NotePropertyName "exit_seen_at" -NotePropertyValue (Get-Date).ToString("o") -Force
                     $entry.updated_at = (Get-Date).ToString("o")
-                    Write-Host ("[EXIT] {0}: state=exit confirmed=true, entering finishing" -f $entry.agent_id)
+                    if (Test-GroupFilter $entry) {
+                        Write-Host ("[EXIT] {0}: state=exit confirmed=true, entering finishing" -f $entry.agent_id)
+                    }
                     $changed = $true
                 }
             }
@@ -515,7 +546,9 @@ function Sync-KillPending {
             }
             $elapsed = ((Get-Date) - $seenAt).TotalSeconds
             if ($elapsed -lt 5) {
-                Write-Host "[EXIT] $($entry.agent_id) grace period: $([math]::Floor($elapsed))s / 5s"
+                if (Test-GroupFilter $entry) {
+                    Write-Host "[EXIT] $($entry.agent_id) grace period: $([math]::Floor($elapsed))s / 5s"
+                }
                 continue
             }
             $killPid = $entry.pid
@@ -525,9 +558,13 @@ function Sync-KillPending {
                         Where-Object { $_.ParentProcessId -eq [int]$killPid } |
                         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
                     Stop-Process -Id ([int]$killPid) -Force -ErrorAction SilentlyContinue
-                    Write-Host "[EXIT] Killed runner PID $killPid + children for $($entry.agent_id)"
+                    if (Test-GroupFilter $entry) {
+                        Write-Host "[EXIT] Killed runner PID $killPid + children for $($entry.agent_id)"
+                    }
                 } catch {
-                    Write-Host ("[EXIT] Kill attempt for PID $killPid failed: " + $_.Exception.Message)
+                    if (Test-GroupFilter $entry) {
+                        Write-Host ("[EXIT] Kill attempt for PID $killPid failed: " + $_.Exception.Message)
+                    }
                 }
             }
             $entry.status = @("finished","ready"); $entry.pid = $null
@@ -535,7 +572,9 @@ function Sync-KillPending {
             if ($entry.PSObject.Properties["exit_seen_at"]) {
                 $entry.PSObject.Properties.Remove("exit_seen_at")
             }
-            Write-Host "[EXIT] $($entry.agent_id) cleanup complete"
+            if (Test-GroupFilter $entry) {
+                Write-Host "[EXIT] $($entry.agent_id) cleanup complete"
+            }
             $changed = $true
         }
     }
@@ -621,7 +660,8 @@ function Invoke-SendInternal {
         [string]$Prompt,
         [string]$Role = "explorer",
         [string]$Model = "",
-        [string]$InjectNormal = ""
+        [string]$InjectNormal = "",
+        [string]$Group = ""
     )
     $Agents = Read-Agents
     $found = Find-ActiveAgent -TargetAgentId $AgentId -AgentsDict $Agents
@@ -631,13 +671,13 @@ function Invoke-SendInternal {
         $entry = New-AgentEntry -AgentId $AgentId
         $key = $entry.internal_id
         $Agents[$key] = $entry
-        _DoLaunch -AgentId $AgentId -Entry $entry -Prompt $Prompt -Role $Role -Model $Model -InjectNormal $InjectNormal
+        _DoLaunch -AgentId $AgentId -Entry $entry -Prompt $Prompt -Role $Role -Model $Model -InjectNormal $InjectNormal -Group $Group
         return
     }
     $entry = $found.entry
     if ("running" -notin $entry.status) {
         $null = Assert-SendPreflight -TargetRole $Role -TargetInjectNormal $InjectNormal
-        _DoLaunch -AgentId $AgentId -Entry $entry -Prompt $Prompt -Role $Role -Model $Model -InjectNormal $InjectNormal
+        _DoLaunch -AgentId $AgentId -Entry $entry -Prompt $Prompt -Role $Role -Model $Model -InjectNormal $InjectNormal -Group $Group
         return
     }
     $null = Assert-SendPreflight -TargetRole $Role -TargetInjectNormal $InjectNormal
@@ -647,7 +687,7 @@ function Invoke-SendInternal {
 }
 
 function _DoLaunch {
-    param($AgentId, $Entry, $Prompt, $Role, $Model, $InjectNormal)
+    param($AgentId, $Entry, $Prompt, $Role, $Model, $InjectNormal, [string]$Group = "")
 
     $fresh = Has-Flag "-FreshSession"
     $isNewSession = (-not $Entry.session_uuid) -or $fresh
@@ -730,6 +770,7 @@ function _DoLaunch {
         }
 
         if ($Mode) { $Entry.default_mode = $Mode }
+        if ($Group) { $Entry.group = $Group }
         $Entry.status = @("running")
         $Entry.pid = $launch.tui_pid
         $Entry.current_task = [ordered]@{
@@ -760,6 +801,9 @@ function Invoke-Send {
     if (-not $Prompt) { throw "Missing -Prompt" }
     if (-not $AgentName) { throw "Missing -AgentName" }
 
+    # Apply active group scope for Sync-All message filtering
+    $script:ActiveGroup = $Group
+
     $Agents = Read-Agents
     Sync-All -Agents $Agents
     Invalidate-Cache; $Agents = Read-Agents
@@ -770,7 +814,7 @@ function Invoke-Send {
         $entry = New-AgentEntry -AgentId $AgentName
         $key = $entry.internal_id
         $Agents[$key] = $entry
-        _DoLaunch -AgentId $AgentName -Entry $entry -Prompt $Prompt -Role $Role -Model $Model -InjectNormal $InjectNormal
+        _DoLaunch -AgentId $AgentName -Entry $entry -Prompt $Prompt -Role $Role -Model $Model -InjectNormal $InjectNormal -Group $Group
         return
     }
 
@@ -779,7 +823,7 @@ function Invoke-Send {
         $null = Assert-SendPreflight -TargetRole $Role -TargetInjectNormal $InjectNormal
         Invalidate-Cache; $Agents = Read-Agents
         $entry = $Agents[$found.key]
-        _DoLaunch -AgentId $AgentName -Entry $entry -Prompt $Prompt -Role $Role -Model $Model -InjectNormal $InjectNormal
+        _DoLaunch -AgentId $AgentName -Entry $entry -Prompt $Prompt -Role $Role -Model $Model -InjectNormal $InjectNormal -Group $Group
         return
     }
 
@@ -832,17 +876,22 @@ function Invoke-Send {
 # ====================================================
 
 function Invoke-Agents {
+    param([string]$Group = "")
+    $script:ActiveGroup = $Group
+
     Invalidate-Cache
     $Agents = Read-Agents
     Sync-All -Agents $Agents
 
     $filtered = @($Agents.Values | Where-Object {
         if (-not $ShowAll -and "deleted" -in $_.status) { return $false }
+        if ($Group -and (-not $_.PSObject.Properties["group"] -or $_.group -ne $Group)) { return $false }
         return $true
     })
 
     if ($filtered.Count -eq 0) {
-        Write-Host "No agents found."
+        if ($Group) { Write-Host "No agents found in group '$Group'." }
+        else { Write-Host "No agents found." }
         if (-not $ShowAll) { Write-Host "Use --all to show deleted agents." }
         return
     }
@@ -860,11 +909,13 @@ function Invoke-Agents {
         }
     }
     Write-Host ""
-    Write-Host ("Total: {0} agents" -f $filtered.Count)
+    if ($Group) { Write-Host ("Group: {0} | Total: {1} agents" -f $Group, $filtered.Count) }
+    else { Write-Host ("Total: {0} agents" -f $filtered.Count) }
 }
 
 function Invoke-AgentDetail {
-    param([string]$AgentId)
+    param([string]$AgentId, [string]$Group = "")
+    $script:ActiveGroup = $Group
 
     if (-not $AgentId) { throw "Usage: ClaudeTui agent <agent_id>" }
 
@@ -874,6 +925,11 @@ function Invoke-AgentDetail {
 
     $found = Find-ActiveAgent -TargetAgentId $AgentId -AgentsDict $Agents
     if (-not $found) { Write-Host "Agent '$AgentId' not found."; exit 1 }
+    if ($Group -and $found.entry.group -ne $Group) {
+        Write-Host "Agent '$AgentId' exists but is not in group '$Group' (actual: $($found.entry.group))."
+        Write-Host "Use -Group '' or omit -Group to access it."
+        exit 1
+    }
 
     $e = $found.entry
     Write-Host "=========================================="
@@ -914,7 +970,16 @@ function Invoke-AgentDetail {
 # ====================================================
 
 function Invoke-Wait {
-    param([string[]]$Targets)
+    param([string[]]$Targets, [string]$Group = "")
+    $script:ActiveGroup = $Group
+
+    # Helper: returns $true if an agent entry is "ready to consume" respecting group filter.
+    function Test-AgentIsReady {
+        param($e, [string]$Group)
+        if ("finished" -notin $e.status -or "ready" -notin $e.status) { return $false }
+        if (-not $Group) { return $true }
+        return ($e.PSObject.Properties["group"] -and $e.group -eq $Group)
+    }
 
     if (-not $Targets -or $Targets.Count -eq 0) { Write-Host "Usage: ClaudeTui wait <any|all|agent_id [agent_id ...]>"; exit 1 }
 
@@ -923,7 +988,8 @@ function Invoke-Wait {
     # ---- wait any <agent_id> [agent_id ...] (subset any) ----
     if ($Targets[0] -eq "any" -and $Targets.Count -ge 2) {
         $subsetTargets = $Targets[1..($Targets.Count-1)]
-        Write-Host "[WAIT-ANY] Among: $($subsetTargets -join ', ')"
+        if ($Group) { Write-Host "[WAIT-ANY] Group: $Group | Among: $($subsetTargets -join ', ')" }
+        else { Write-Host "[WAIT-ANY] Among: $($subsetTargets -join ', ')" }
         while ($true) {
             Sync-All -Agents $Agents
             Invalidate-Cache; $Agents = Read-Agents
@@ -933,7 +999,7 @@ function Invoke-Wait {
                 $found = Find-ActiveAgent -TargetAgentId $t -AgentsDict $Agents
                 if (-not $found) { continue }
                 $e = $found.entry
-                if ("finished" -in $e.status -and "ready" -in $e.status) {
+                if (Test-AgentIsReady $e $Group) {
                     $e.status = @("finished","consumed"); $e.updated_at = (Get-Date).ToString("o")
                     Save-Agents -Agents $Agents
                     $nextKey = $found.key; break
@@ -948,7 +1014,7 @@ function Invoke-Wait {
             }
 
             $anyRunning = ($Agents.Values | Where-Object {
-                $_.agent_id -in $subsetTargets -and "deleted" -notin $_.status -and ("running" -in $_.status -or "finishing" -in $_.status)
+                $_.agent_id -in $subsetTargets -and "deleted" -notin $_.status -and ("running" -in $_.status -or "finishing" -in $_.status) -and (Test-GroupFilter $_)
             }).Count -gt 0
             if (-not $anyRunning) { Write-Host "[WAIT-ANY] No running workers in subset."; return }
             Start-Sleep -Seconds 2
@@ -999,6 +1065,7 @@ function Invoke-Wait {
             foreach ($key in @($Agents.Keys)) {
                 $e = $Agents[$key]
                 if ("deleted" -in $e.status) { continue }
+                if (-not (Test-GroupFilter $e)) { continue }
                 if ("finished" -in $e.status -and "ready" -in $e.status) {
                     $e.status = @("finished","consumed")
                     $e.updated_at = (Get-Date).ToString("o")
@@ -1016,7 +1083,7 @@ function Invoke-Wait {
             }
 
             $anyRunning = ($Agents.Values | Where-Object {
-                "deleted" -notin $_.status -and ("running" -in $_.status -or "finishing" -in $_.status)
+                "deleted" -notin $_.status -and ("running" -in $_.status -or "finishing" -in $_.status) -and (Test-GroupFilter $_)
             }).Count -gt 0
 
             if (-not $anyRunning) { Write-Host "[WAIT-ANY] No running workers."; return }
@@ -1029,14 +1096,14 @@ function Invoke-Wait {
             Sync-All -Agents $Agents
             Invalidate-Cache; $Agents = Read-Agents
             $running = @($Agents.Values | Where-Object {
-                "deleted" -notin $_.status -and ("running" -in $_.status -or "finishing" -in $_.status)
+                "deleted" -notin $_.status -and ("running" -in $_.status -or "finishing" -in $_.status) -and (Test-GroupFilter $_)
             })
             if ($running.Count -eq 0) { break }
             Write-Host ("[WAIT-ALL] {0} workers still running..." -f $running.Count)
             Start-Sleep -Seconds 2
         }
         Write-Host "[WAIT-ALL] All workers finished."
-        Invoke-Agents
+        Invoke-Agents -Group $Group
         return
     }
 
@@ -1062,13 +1129,18 @@ function Invoke-Wait {
 # ====================================================
 
 function Invoke-Result {
-    param([string]$AgentId)
+    param([string]$AgentId, [string]$Group = "")
 
     if (-not $AgentId) { throw "Usage: ClaudeTui result <agent_id>" }
 
     $Agents = Read-Agents
     $found = Find-ActiveAgent -TargetAgentId $AgentId -AgentsDict $Agents
     if (-not $found) { Write-Host "Agent '$AgentId' not found."; exit 1 }
+    if ($Group -and $found.entry.group -ne $Group) {
+        Write-Host "Agent '$AgentId' exists but is not in group '$Group' (actual: $($found.entry.group))."
+        Write-Host "Use -Group '' or omit -Group to access it."
+        exit 1
+    }
 
     $task = $found.entry.current_task
     if (-not $task -or -not $task.command_id) {
@@ -1115,7 +1187,7 @@ function Invoke-Result {
 }
 
 function Invoke-Remove {
-    param([string]$Target, [string[]]$Keep = @())
+    param([string]$Target, [string[]]$Keep = @(), [string]$Group = "")
 
     if (-not $Target) { throw "Usage: ClaudeTui remove <agent_id|all> [-k <id1> ...]" }
 
@@ -1127,6 +1199,7 @@ function Invoke-Remove {
         foreach ($key in @($Agents.Keys)) {
             $e = $Agents[$key]
             if ("deleted" -in $e.status) { continue }
+            if ($Group -and (-not $e.PSObject.Properties["group"] -or $e.group -ne $Group)) { continue }
             if ($keepSet.ContainsKey($e.agent_id)) { $skipped++; continue }
             if ("running" -in $e.status -or "finishing" -in $e.status) {
                 Write-Host "[SKIP] $($e.agent_id) is running, cannot remove"
@@ -1141,13 +1214,18 @@ function Invoke-Remove {
         if ($count -eq 0 -and $skipped -eq 0) {
             Write-Host "No removable agents."
         } else {
-            Write-Host ("[OK] Soft-deleted {0} agent(s), kept {1}" -f $count, $skipped)
+            if ($Group) { Write-Host ("[OK] Group '{0}': soft-deleted {1} agent(s), kept {2}" -f $Group, $count, $skipped) }
+            else { Write-Host ("[OK] Soft-deleted {0} agent(s), kept {1}" -f $count, $skipped) }
         }
         return
     }
 
     $found = Find-ActiveAgent -TargetAgentId $Target -AgentsDict $Agents
     if (-not $found) { Write-Host "'$Target' not found."; exit 1 }
+    if ($Group -and $found.entry.group -ne $Group) {
+        Write-Host "'$Target' exists but is not in group '$Group' (actual: $($found.entry.group)). Use -Group '' or omit -Group."
+        exit 1
+    }
     if ("running" -in $found.entry.status -or "finishing" -in $found.entry.status) {
         Write-Host "'$Target' is running. Cannot remove a running agent."
         exit 1
@@ -1429,11 +1507,11 @@ function Invoke-RoleUnregister {
 
 switch ($Command) {
     "send"   { Invoke-Send }
-    "agents" { Invoke-Agents }
-    "agent"  { Invoke-AgentDetail -AgentId $AgentName }
-    "wait"   { Invoke-Wait -Targets $AgentNames }
-    "result" { Invoke-Result -AgentId $AgentName }
-    "remove" { Invoke-Remove -Target $AgentName -Keep $KeepIds }
+    "agents" { Invoke-Agents -Group $Group }
+    "agent"  { Invoke-AgentDetail -AgentId $AgentName -Group $Group }
+    "wait"   { Invoke-Wait -Targets $AgentNames -Group $Group }
+    "result" { Invoke-Result -AgentId $AgentName -Group $Group }
+    "remove" { Invoke-Remove -Target $AgentName -Keep $KeepIds -Group $Group }
     "role"   {
         $roleSub = if ($scriptArgs.Count -gt 1) { $scriptArgs[1] } else { "" }
         $roleNameArg = if ($scriptArgs.Count -gt 2 -and $scriptArgs[2] -notlike "-*") { $scriptArgs[2] } else { $null }
