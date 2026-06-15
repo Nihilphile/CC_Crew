@@ -291,6 +291,8 @@ function Build-WorkerPrompt {
     }
 
     # 3. Build completion reminder (brief, v2 protocol)
+    # NOTE: avoid angle-brackets-in-quotes (<your>) which may trigger
+    # downstream truncation in the Claude CLI prompt pipeline.
     $reminder = @"
 
 Automated pipeline. No confirmation needed. No exploring beyond the task.
@@ -299,7 +301,7 @@ COMPLETION — when your work is done:
 - Writing a summary to: $resultPath is optional but helpful.
 - The authoritative completion signal is Update-WorkerState.ps1:
   1. First call: --exit (prints checklist, no state change).
-  2. Then call: --exit -Confirm -SummaryMessage "<your summary>".
+  2. Then call: --exit -Confirm -SummaryMessage "your summary here".
 "@
 
     # 4. InjectNormal: load and prepend normal_prompt template (unchanged behavior)
@@ -323,13 +325,19 @@ $normalContent
 "@
     }
 
-    return @"
+    # Reorder: TASK before COMPLETION so that if the COMPLETION block
+    # (which contains "<your summary>") causes downstream truncation in
+    # the Claude CLI pipeline, the actual task requirements are preserved.
+    # INJECTED NORMAL PROMPT (role-specific approach) still comes before TASK.
+    $combinedPrompt = @"
 $header
-$reminder
 $injectBlock
 TASK:
 $UserPrompt
+
+$reminder
 "@
+    return $combinedPrompt
 }
 function Write-LaunchSummary {
     param([string]$Cid, [string]$DPath, [string]$RPath, [string]$RunPath, [string]$PPath, [int]$TPid, [string]$Sid)
