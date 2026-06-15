@@ -375,9 +375,31 @@ function Sync-DeadToFailed {
             if (Wait-Job $procJob -Timeout 3) { $proc = Receive-Job $procJob }
             Remove-Job $procJob -Force -ErrorAction SilentlyContinue
             if (-not $proc) {
-                $entry.status = @("failed"); $entry.pid = $null
-                $entry.updated_at = (Get-Date).ToString("o")
-                $changed = $true
+                # Defence: if done.json exists, worker completed cleanly; don't flag as failed
+                $task = $entry.current_task
+                $hasDoneJson = $false
+                if ($task -and $task.command_id) {
+                    $safe = $entry.agent_id -replace '[^a-zA-Z0-9_.-]', '_'
+                    $doneCheck = Join-Path $skillRoot "store\$safe\results\$($task.command_id).done.json"
+                    if (Test-Path -LiteralPath $doneCheck -PathType Leaf) {
+                        try {
+                            $dc = Get-Content $doneCheck -Raw -Encoding UTF8 | ConvertFrom-Json
+                            if ($dc.exit_code -eq 0) { $hasDoneJson = $true }
+                        } catch {}
+                    }
+                }
+                if ($hasDoneJson) {
+                    $entry.status = @("finished","ready"); $entry.pid = $null
+                    $entry.updated_at = (Get-Date).ToString("o")
+                    $changed = $true
+                    if (Test-GroupFilter $entry) {
+                        Write-Host ("[DEAD] {0}: PID dead but done.json=ok, marking finished/ready" -f $entry.agent_id)
+                    }
+                } else {
+                    $entry.status = @("failed"); $entry.pid = $null
+                    $entry.updated_at = (Get-Date).ToString("o")
+                    $changed = $true
+                }
             }
         } catch {
             $entry.status = @("failed"); $entry.pid = $null
@@ -413,7 +435,17 @@ function Sync-DoneToManager {
             if ($entry.pending_task) {
                 $autoStarts += @{ key = $key; entry = $entry }
             }
-        } catch {}
+        } catch {
+            if (Test-GroupFilter $entry) {
+                Write-Host ("[DONE] ERROR processing done.json for {0}: {1}" -f $entry.agent_id, $_.Exception.Message)
+            }
+            # Best-effort: set finished anyway since done.json exists on disk
+            try {
+                $entry.status = @("finished","ready"); $entry.pid = $null
+                $entry.updated_at = (Get-Date).ToString("o")
+                $changed = $true
+            } catch {}
+        }
     }
     if ($changed) { Save-Agents -Agents $Agents }
     foreach ($as in $autoStarts) {
