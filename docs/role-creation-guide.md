@@ -94,17 +94,24 @@ Do not copy the full prompt files into the profile.
 
 ## Design Legal States
 
-`running` and `exit` are mandatory. Add a state only when it gives the orchestrator
-useful information or controls a meaningful protocol boundary.
+Every role includes the three universal states (`accepted`, `rejected`, `exit`)
+out of the box. Add role-specific working states only when they give the
+orchestrator useful information or control a meaningful protocol boundary.
 
-Good states describe externally observable conditions, such as `investigating`,
-`verifying`, or `blocked`. Avoid turning every checklist item into a state.
+`accepted` is a **mandatory handshake** — the worker's first action after reading
+the task. `rejected` is the escape hatch: if the task is truncated or cannot
+proceed, the worker sets `rejected` and exits immediately without entering any
+working state.
+
+Good role-specific states describe externally observable conditions, such as
+`investigating`, `verifying`, or `blocked`. Avoid turning every checklist item
+into a state.
 
 Do not design ordinary role states as a linear flow such as
-`running -> inspecting -> verifying -> exit`. Legal states are a palette of observable
-current-work labels. After `running`, the worker should choose the legal state that
-matches its real current phase, and then end with confirmed `exit` when the assigned
-work is genuinely done.
+`accepted -> inspecting -> verifying -> exit`. Legal states are a palette of
+observable current-work labels. After `accepted`, the worker should choose the
+legal state that matches its real current phase, and then end with confirmed
+`exit` when the assigned work is genuinely done.
 
 Only smoke/protocol-test roles should require a worker to visit several states in a
 fixed order, and that requirement should live in a selected smoke task or
@@ -132,7 +139,7 @@ Example:
 ```json
 {
   "version": "1",
-  "states": ["running", "investigating", "verifying", "blocked", "exit"],
+  "states": ["accepted", "rejected", "investigating", "verifying", "blocked", "exit"],
   "exit_confirmation": "Have you answered the assigned questions, separated facts from inference, and left reviewable evidence?",
   "description": "Evidence-gathering lifecycle"
 }

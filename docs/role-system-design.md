@@ -1,18 +1,21 @@
 # Role System Design (v2) — Final
 
 > **Status**: Implemented. This document reflects the as-built design.
+> **Last updated**: 2026-06-16 (universal handshake states, bare role, prompt ordering)
 
 ## Directory Structure
 
 ```
 prompt_templates/
 ├── default/
-│   ├── system.md                        ← State system user manual (how to use Update-WorkerState)
-│   │                                     ← NO engineering rules, no safety constraints
+│   ├── system.md                        ← State system user manual + universal handshake protocol
 │   │                                     ← Injected to --system-prompt-file (Layer 1)
-│   └── header.md                        ← Worker preamble with ~~ROLE~~ placeholder
+│   └── header.md                        ← Worker preamble (~~ROLE~~ optional)
 │
 └── role/
+    ├── bare/                            ← Default when no -Role specified
+    │   └── legal_state.json             ← Universal states only, no prompt templates
+    │
     └── <role-name>/                     ← Created by `role register <name>`
         ├── system_prompt/               ← Injected to --system-prompt-file (Layer 2, after default/system.md)
         │   └── *.md                     ← Sorted alphabetically, concatenated
@@ -20,20 +23,47 @@ prompt_templates/
         │   └── *.md                     ← Sorted alphabetically, concatenated
         ├── normal_prompt/               ← NOT auto-injected. Only when -InjectNormal <name> is used.
         │   └── <name>.md                ← Template name = filename without .md extension
-        └── legal_state.json             ← {"version":"1","states":["running","exit"],"exit_confirmation":"..."}
+        └── legal_state.json             ← Universal states + role-specific working states
 ```
+
+All directories except `legal_state.json` are optional. The `bare` role demonstrates
+this: it has only `legal_state.json` and injects no role-specific prompts.
+
+## Universal States (Every Role)
+
+Three states are always available regardless of role. They are not listed in each
+role's `legal_state.json` to avoid boilerplate; the manager treats them as implicit.
+
+| State | When | Meaning |
+|-------|------|---------|
+| `accepted` | **FIRST action**, before any working state | Mandatory handshake. Worker confirms it received the complete task and understands requirements. |
+| `rejected` | Instead of `accepted`, before any working state | Task is truncated, incomplete, or cannot proceed. Set this, then immediately `--exit -Confirm`. No working state may follow. |
+| `exit` | After all work is done | Two-step: `--exit` (prints checklist) then `--exit -Confirm` (writes final state). |
+
+The mandatory handshake ensures a truncated prompt (e.g. due to Claude Code's
+`"your "` pattern truncation bug) is detected before work starts. A worker that
+never sets `accepted` never entered the task.
 
 ## Injection Rules (fixed, not configurable)
 
 | Layer | Source | Injection Target | Purpose |
 |-------|--------|-----------------|---------|
-| 1 | `default/system.md` | `--system-prompt-file` | State system manual (Update-WorkerState usage) |
+| 1 | `default/system.md` | `--system-prompt-file` | Universal handshake protocol + Update-WorkerState usage |
 | 2 | `role/<name>/system_prompt/*.md` (sorted) | `--system-prompt-file` (appended) | Role-specific rules, compression-resistant |
-| 3 | Role legal states + Update-WorkerState usage | `--system-prompt-file` (appended) | Current role's legal state list, exit confirmation |
-| 4 | `default/header.md` | Task prompt preamble | Worker identity + `~~ROLE~~` substitution |
+| 3 | Role legal states | `--system-prompt-file` (appended) | Current role's legal state list, exit confirmation |
+| 4 | `default/header.md` | Task prompt preamble | Worker identity |
 | 5 | `role/<name>/header_prompt/*.md` (sorted) | Task prompt preamble (appended) | Role persona, stable preamble |
 | 6 | `role/<name>/normal_prompt/<name>.md` | Task prompt body (appended) | Only when `-InjectNormal <name>` specified |
-| 7 | User Prompt | Task prompt body | The task from the orchestrator |
+| 7 | TASK: + User Prompt | Task prompt body | The task from the orchestrator — placed BEFORE COMPLETION reminder to survive truncation |
+| 8 | COMPLETION reminder | Task prompt tail | Protocol reminder, placed after TASK to limit damage if truncated |
+
+### Prompt Ordering
+
+**TASK content is placed before the COMPLETION reminder block.** This is a defensive
+measure against a known truncation bug in Claude Code's prompt pipeline: the pattern
+`"your ` (double-quote + "your" + space) triggers truncation that discards all
+subsequent content. With TASK before COMPLETION, the task requirements reach the
+model even if the COMPLETION block tail is cut off.
 
 ## `role register` — v2 Behavior
 
@@ -51,7 +81,7 @@ role register <name> [-Force]
    ```json
    {
      "version": "1",
-     "states": ["running", "exit"],
+     "states": ["accepted", "rejected", "exit"],
      "exit_confirmation": "你确认已经完整执行主控要求的结束流程，并留下主控可验收的结果或证据了吗？",
      "description": "Default legal states for <name>"
    }
@@ -59,29 +89,46 @@ role register <name> [-Force]
 5. Record entry in `prompt_templates/roles.json` with `"structure": "v2"`
 
 **No file copying.** `-Files` is no longer required. Orchestrator manually places `.md` files into the three folders after registration.
+Orchestrator adds role-specific working states by editing `legal_state.json` directly.
 
 ## `legal_state.json` — Schema
 
 ```jsonc
 {
   "version": "1",                    // optional
-  "states": ["running", "exit"],     // required: min ["running","exit"]
+  "states": ["accepted", "rejected",  // universal (always present)
+             "inspecting", "coding",  // role-specific working states
+             "exit"],                 // universal
   "exit_confirmation": "...",        // required: shown to worker on --exit (no Confirm)
   "description": "..."              // optional: human note
 }
 ```
 
-- `"running"` and `"exit"` are **mandatory**. If either is missing, `send` is **rejected** in preflight.
-- `legal_state.json` is **mandatory** for all roles. `send` with a role lacking this file is rejected (no flat role compat).
+- `"accepted"` and `"exit"` are **mandatory**. If `"accepted"` is missing, `send` is **rejected** in preflight.
+- `"rejected"` is required in the default registration template; orchestrator may choose to keep or remove it.
+- `legal_state.json` is **mandatory** for all roles except `bare` (which has a minimal one). `send` with a role lacking this file is rejected.
 - Orchestrator can manually edit `legal_state.json` to add/remove states.
 - `Update-WorkerState.ps1` validates against this file at runtime (hard error on illegal state).
+
+## Worker Identity (Environment Variables)
+
+Every runner exports these environment variables before launching Claude:
+
+| Variable | Value |
+|----------|-------|
+| `CC_CREW_SKILL_ROOT` | Absolute path to the CC_Crew skill directory |
+| `CC_CREW_AGENT` | Full agent ID (with `group::` prefix if applicable) |
+| `CC_CREW_COMMAND_ID` | Current command ID (timestamp-based) |
+
+The `system.md` contract instructs workers to use these env vars for all
+`Update-WorkerState.ps1` calls. Workers must NOT construct the script path manually.
 
 ## Update-WorkerState.ps1 — v2 Behavior
 
 The ONLY worker-facing lifecycle/state interface.
 
 ```
-powershell -File Update-WorkerState.ps1 -AgentName "agent" -CommandId "id" -Role "role" --<legal-state> [-Confirm] [-SummaryMessage "text"]
+powershell -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "role" --<legal-state> [-Confirm] [-SummaryMessage "text"]
 ```
 
 ### Parameters
@@ -91,7 +138,7 @@ powershell -File Update-WorkerState.ps1 -AgentName "agent" -CommandId "id" -Role
 | `-AgentName` | Yes | Agent ID |
 | `-CommandId` | Yes | Command ID |
 | `-Role` | Yes | Role name (must match task-assigned role) |
-| `--<state>` | Yes | Exactly one legal state, e.g. `--running`, `--exit` |
+| `--<state>` | Yes | Exactly one legal state, e.g. `--accepted`, `--rejected`, `--exit` |
 | `-Confirm` | No | Required for `--exit` to confirm and write state |
 | `-SummaryMessage` | No | Optional human-readable summary |
 
@@ -103,7 +150,7 @@ Written to `run/<agent>/.<command_id>.state`:
   "agent_id": "my-agent",
   "command_id": "20260615-...",
   "role": "coder",
-  "state": "running",
+  "state": "accepted",
   "confirmed": false,
   "updated_at": "2026-06-15T...",
   "summary_message": "Optional summary"

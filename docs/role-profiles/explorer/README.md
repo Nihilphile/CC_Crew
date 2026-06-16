@@ -17,11 +17,12 @@ dependencies, contracts, regressions, or feasible options.
 
 ## States
 
-`running`, `investigating`, `verifying`, `blocked`, `exit`
+`accepted`, `rejected`, `investigating`, `verifying`, `blocked`, `exit`
 
-States are observable work stage labels, not a workflow graph. Only `running`
-and confirmed `exit` are mandatory. After `running`, the explorer should report
-whichever legal state best matches the real current phase. Never require a
+States are observable work stage labels, not a workflow graph. `accepted`
+(handshake) and confirmed `exit` are mandatory for every worker. After
+`accepted`, the explorer should report whichever legal state best matches the
+real current phase. Never require a
 worker to visit every listed state unless the task is explicitly testing state
 transitions.
 

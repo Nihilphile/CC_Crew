@@ -14,13 +14,13 @@ allowed scope, accepted baseline, and verification expectations.
 
 ## States
 
-`running`, `inspecting`, `questioning`, `coding`, `verifying`, `exit`
+`accepted`, `rejected`, `inspecting`, `questioning`, `coding`, `verifying`, `exit`
 
-States are observable work stage labels, not a workflow graph. Only `running`
-and confirmed `exit` are mandatory. After `running`, the coder should report
-whichever legal state best matches the real current phase. Never require a
-worker to visit every listed state unless the task is explicitly testing state
-transitions.
+States are observable work stage labels, not a workflow graph. `accepted`
+(handshake) and confirmed `exit` are mandatory for every worker. After
+`accepted`, the coder should report whichever legal state best matches the
+real current phase. Never require a worker to visit every listed state
+unless the task is explicitly testing state transitions.
 
 State selection notes:
 
