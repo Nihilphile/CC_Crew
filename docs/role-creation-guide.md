@@ -94,35 +94,39 @@ Do not copy the full prompt files into the profile.
 
 ## Design Legal States
 
+States are **situational triggers**, not a palette of optional labels.
+
+The rule is simple: **when the worker's real posture matches a state's trigger,
+the worker MUST enter that state. When it does not match, the worker MUST NOT
+enter it.** There is no "optional." There is only "am I in this situation or not."
+
 Every role includes the three universal states (`accepted`, `rejected`, `exit`)
-out of the box. Add role-specific working states only when they give the
-orchestrator useful information or control a meaningful protocol boundary.
+out of the box. Add role-specific working states only when each one has a clear
+trigger condition and a clear prohibition — the worker should know exactly when to
+set it and exactly when not to.
 
 `accepted` is a **mandatory handshake** — the worker's first action after reading
 the task. `rejected` is the escape hatch: if the task is truncated or cannot
 proceed, the worker sets `rejected` and exits immediately without entering any
 working state.
 
-Good role-specific states describe externally observable conditions, such as
-`investigating`, `verifying`, or `blocked`. Avoid turning every checklist item
-into a state.
+For every role-specific state, define:
 
-Do not design ordinary role states as a linear flow such as
-`accepted -> inspecting -> verifying -> exit`. Legal states are a palette of
-observable current-work labels. After `accepted`, the worker should choose the
-legal state that matches its real current phase, and then end with confirmed
-`exit` when the assigned work is genuinely done.
+- **Trigger** — the exact situational condition that requires the state. Use
+  concrete, observable criteria: "you have started editing files" not "you feel
+  ready to code."
+- **Forbidden** — when the state must NOT be used, even if it appears in the
+  legal list. This prevents workers from using states as decorative labels.
+
+Place trigger definitions in `system_prompt/20-state-semantics.md` and a compact
+reminder in `header_prompt/10-state-reminder.md`.
+
+Good states describe externally observable conditions, such as `investigating`,
+`verifying`, or `blocked`. Avoid turning every checklist item into a state.
 
 Only smoke/protocol-test roles should require a worker to visit several states in a
 fixed order, and that requirement should live in a selected smoke task or
 `normal_prompt`, not in a generic role contract.
-
-For every custom state, the system prompt should say:
-
-- when the worker enters it;
-- what evidence or condition it represents;
-- when it leaves it;
-- whether `SummaryMessage` is expected.
 
 The exit confirmation should test the role's ending obligations without assuming a
 specific artifact such as `result.md`.

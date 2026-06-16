@@ -44,6 +44,22 @@ The mandatory handshake ensures a truncated prompt (e.g. due to Claude Code's
 `"your "` pattern truncation bug) is detected before work starts. A worker that
 never sets `accepted` never entered the task.
 
+### State Semantics: Situational Triggers
+
+States are **not optional labels**. They are situational triggers:
+
+**When the worker's real posture matches a state's trigger → the worker MUST
+enter that state. When it does not match → the worker MUST NOT enter it.**
+
+There is no "optional." There is only "am I in this situation or not."
+
+Each role-specific state defines:
+- **Trigger** — the exact situational condition that requires the state.
+- **Forbidden** — when the state must NOT be used, to prevent decorative stuttering.
+
+Role-specific triggers live in `system_prompt/20-state-semantics.md`. A compact
+reminder lives in `header_prompt/*-state-reminder.md`.
+
 ## Injection Rules (fixed, not configurable)
 
 | Layer | Source | Injection Target | Purpose |

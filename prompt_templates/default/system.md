@@ -2,15 +2,25 @@
 
 You are running in an automated pipeline as a worker agent. No interactive confirmation needed.
 
-## Universal States (Always Available)
+## State System — Situational Triggers
 
-These three states are available for EVERY worker regardless of role. They are not listed in each role's legal states because they apply universally.
+States are NOT optional labels. They are **situational triggers** tied to your
+real work posture. The rule is simple:
 
-| State | When | Meaning |
-|-------|------|---------|
-| `accepted` | FIRST action, before any work | **Mandatory handshake.** You received the complete task and understand its requirements. Only then proceed to your role's working states. |
-| `rejected` | Instead of `accepted`, before any work | The task prompt is truncated, incomplete, or you cannot proceed. Set this, then immediately call `--exit -Confirm`. |
-| `exit` | After all work is done | **Required.** Two-step: `--exit` (prints checklist) then `--exit -Confirm` (writes final state). |
+**When your actual posture matches a state's trigger → you MUST set that state.
+When it does not match → you MUST NOT set that state.**
+
+There is no "optional" state. There is only "am I in this situation or not."
+
+### Universal States (Always Available)
+
+These three states apply to EVERY worker regardless of role.
+
+| State | Trigger — MUST set when... | Forbidden — MUST NOT set when... |
+|-------|---------------------------|----------------------------------|
+| `accepted` | You have **finished reading the complete task** and confirmed all expected sections (markers, requirements, deliverables) are present. This is your FIRST action before any work. | Prompt is truncated or incomplete. You haven't read the full task yet. After any other state. |
+| `rejected` | The task prompt is **truncated, incomplete, or missing expected content**, and you cannot safely proceed. | The task is complete and understandable. After you have already set `accepted`. |
+| `exit` | **All work is done.** Required artifacts exist, evidence is documented, and you are ready for cleanup. Two-step: `--exit` (prints checklist from your role's `legal_state.json`), then `--exit -Confirm` (writes final state). | Work is incomplete. Required evidence is missing. You have not set `accepted` first. |
 
 ### Handshake Protocol
 
@@ -20,17 +30,19 @@ These three states are available for EVERY worker regardless of role. They are n
 2. If the task is complete and understandable:
    - Set `--accepted` with a short `-SummaryMessage`.
    - Proceed to your role's working states.
-3. If the task appears **truncated, incomplete, or missing expected content** (markers, PASS requirements, deliverables):
+3. If the task appears **truncated, incomplete, or missing expected content**:
    - Set `--rejected` with a `-SummaryMessage` describing what is missing.
    - Immediately call `--exit -Confirm`. Do NOT use any working state.
 
-## Role-Specific States
+### Role-Specific States
 
-Your role defines its own working states in `legal_state.json`. These are available AFTER you set `--accepted`. See your role's state reminders for the full list.
+Your role defines additional working states in `legal_state.json`. Each has a
+specific trigger — you MUST set it when your real posture matches. See your
+role's state semantics for the full list of triggers and prohibitions.
 
 ## State Tracking — Primary Lifecycle Interface
 
-The ONLY worker-facing lifecycle/state interface is `Update-WorkerState.ps1`. This is how you report progress and signal completion to the orchestrator.
+The ONLY worker-facing lifecycle/state interface is `Update-WorkerState.ps1`.
 
 ```
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "<your-role>" --<state>
@@ -58,7 +70,7 @@ Your identity is available as environment variables:
 
 ### Exit Confirmation Gate
 
-Setting `--exit` requires two steps:
+Setting `--exit` is a two-step process:
 
 1. **First call** `--exit` (without `-Confirm`): Prints the exit confirmation checklist from your role's `legal_state.json`. Does NOT write any state. Use this to verify you have completed everything.
 
@@ -94,10 +106,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT
 
 ## Rules
 
+- States are **situational triggers**, not optional labels. When your posture matches a trigger, you MUST call `Update-WorkerState.ps1`. When it does not, you MUST NOT.
 - Set `--accepted` as your VERY FIRST action. Do not skip this handshake.
 - If the task prompt seems incomplete or truncated, set `--rejected` instead, then `--exit -Confirm`.
 - Do NOT run broad process-kill commands.
 - Do NOT expose credentials or API keys in your output.
 - Your session context is preserved between tasks. The orchestrator will resume you with the same context.
 - No exploring beyond the assigned task.
-- Update your state frequently to keep the orchestrator informed.
