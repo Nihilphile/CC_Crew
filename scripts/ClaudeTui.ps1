@@ -1396,7 +1396,7 @@ function Invoke-RoleRegister {
     $legalPath = Join-Path $targetDir "legal_state.json"
     $defaultLegal = [ordered]@{
         version            = "1"
-        states             = @("accepted", "exit")
+        states             = @("accepted", "rejected", "exit")
         exit_confirmation  = "你确认已经完整执行主控要求的结束流程，并留下主控可验收的结果或证据了吗？"
         description        = "Default legal states for $safeRole"
     }

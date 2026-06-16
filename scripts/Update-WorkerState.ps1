@@ -65,7 +65,7 @@ while ($i -lt $args.Count) {
         $SummaryMessage = $next; $i += 2; continue
     }
     elseif ($lc -eq '-state') {
-        Write-Error "v2 does not use -State. Use --<legal-state> syntax. Examples: --running, --exit, --exit -Confirm"
+        Write-Error "v2 does not use -State. Use --<legal-state> syntax. Examples: --accepted, --rejected, --exit, --exit -Confirm"
         Write-Error "Usage: powershell ... -AgentName <agent> -CommandId <id> -Role <role> --<legal-state>"
         exit 1
     }
@@ -109,7 +109,7 @@ if (-not $Role) {
     exit 1
 }
 if (-not $stateArg) {
-    Write-Error "Missing state argument. Use exactly one --<legal-state>. Examples: --running, --exit"
+    Write-Error "Missing state argument. Use exactly one --<legal-state>. Examples: --accepted, --rejected, --exit"
     Write-Error "Usage: ... -AgentName <agent> -CommandId <id> -Role <role> --<legal-state>"
     exit 1
 }
