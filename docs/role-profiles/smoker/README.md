@@ -20,8 +20,7 @@ process lifecycle verification, short acceptance scenarios, and regression re-te
 
 `accepted`, `rejected`, `preparing`, `exercising`, `observing`, `diagnosing`, `verifying`, `blocked`, `exit`
 
-States are posture labels, not a fixed sequence. `accepted` is the mandatory
-handshake — always set first. `rejected` is the escape hatch for truncated tasks.
+States are **situational triggers**, not posture labels. When your posture matches a trigger, you MUST set that state. When not, you MUST NOT. `accepted` is the mandatory handshake — always set first. `rejected` is the escape hatch for truncated tasks.
 
 Common live smoke flow:
 
