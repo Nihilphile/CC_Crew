@@ -20,7 +20,10 @@ $tui = "F:\AI_project\CC_Crew\scripts\ClaudeTui.ps1"
 & $tui role list
 & $tui role show coder
 
-# Launch a worker. Prefer -p mode for automated orchestration.
+# Bare mode: no -Role — universal states only, no role templates injected.
+& $tui send my-worker -Mode p -Prompt "Read the plan and report findings."
+
+# Launch a worker with a role. Prefer -p mode for automated orchestration.
 & $tui send my-coder `
   -Role coder `
   -Mode p `
@@ -105,43 +108,78 @@ Roles are local, registered prompt/state contracts under:
 
 ```text
 prompt_templates/role/<role>/
-├── system_prompt/       # durable role rules
-├── header_prompt/       # short task preamble
-├── normal_prompt/       # explicit -InjectNormal fragments only
+├── system_prompt/       # durable role rules (optional)
+├── header_prompt/       # short task preamble (optional)
+├── normal_prompt/       # explicit -InjectNormal fragments only (optional)
 └── legal_state.json     # allowed states + exit confirmation
 ```
 
-Current role profiles for orchestrators:
+The `bare` role is the default when no `-Role` is given. It has only
+`legal_state.json` with the three universal states — no role-specific
+prompt injection.
 
-| Role | Profile |
-|------|---------|
-| `coder` | [docs/role-profiles/coder/README.md](docs/role-profiles/coder/README.md) |
-| `explorer` | [docs/role-profiles/explorer/README.md](docs/role-profiles/explorer/README.md) |
-| `test` | [docs/role-profiles/test/README.md](docs/role-profiles/test/README.md) |
+### Universal States (Every Role)
+
+Every role, including `bare`, always has these three states available:
+
+| State | Semantics |
+|-------|-----------|
+| `accepted` | **Mandatory handshake.** First action after reading the task. Confirms the worker received a complete task and understands its requirements. |
+| `rejected` | Task is truncated, incomplete, or cannot proceed. Set this *instead* of `accepted`, then immediately call `--exit -Confirm`. No working state may follow. |
+| `exit` | Two-step end-of-lifecycle. `--exit` prints the exit confirmation checklist. `--exit -Confirm` writes the final state. |
+
+### Current Role Profiles
+
+| Role | Profile | Working States |
+|------|---------|----------------|
+| `bare` | Default. Universal states only. No role templates injected. | `accepted`, `rejected`, `exit` |
+| `coder` | [docs/role-profiles/coder/README.md](docs/role-profiles/coder/README.md) | `inspecting`, `questioning`, `coding`, `verifying` |
+| `explorer` | [docs/role-profiles/explorer/README.md](docs/role-profiles/explorer/README.md) | `investigating`, `verifying`, `blocked` |
+| `reviewer` | [docs/role-profiles/reviewer/README.md](docs/role-profiles/reviewer/README.md) | `inspecting`, `reviewing`, `verifying`, `blocked` |
+| `smoker` | [docs/role-profiles/smoker/README.md](docs/role-profiles/smoker/README.md) | `preparing`, `exercising`, `observing`, `diagnosing`, `verifying`, `blocked` |
+| `test` | [docs/role-profiles/test/README.md](docs/role-profiles/test/README.md) | `coding`, `debugging`, `reviewing` |
 
 Role profiles are human-facing usage notes. Prompt source files remain under
 `prompt_templates/role/` and are gitignored local runtime configuration.
 
-## Lifecycle In One Paragraph
+## Lifecycle
 
-Workers report lifecycle state with `scripts/Update-WorkerState.ps1`. The authoritative
-completion signal is `.state` JSON with `state=exit` and `confirmed=true`. `result.md`
-is optional convenience output. `.exit` is not part of the v2 worker protocol. See the
-state and schema docs for exact fields and transitions.
+Workers report state with `scripts/Update-WorkerState.ps1`.
+
+**Handshake (mandatory, first action):**
+1. Worker reads the task prompt.
+2. If the task is complete and understood → `--accepted`. Then proceed to working states.
+3. If truncated, incomplete, or missing requirements → `--rejected`, then `--exit -Confirm`. No working states.
+
+**Working states** are role-specific and defined in the role's `legal_state.json`.
+They become available only after `--accepted`.
+
+**Completion authority:** `.state` JSON with `state=exit` and `confirmed=true`.
+You must call `--exit` first (prints exit confirmation checklist), then
+`--exit -Confirm` (writes the final state). `result.md` is optional convenience
+output. `.exit` is not part of the v2 worker protocol.
+
+**Worker identity** is available as environment variables:
+`$env:CC_CREW_SKILL_ROOT`, `$env:CC_CREW_AGENT`, `$env:CC_CREW_COMMAND_ID`.
+Always use these; never guess paths.
 
 ## Recommended Orchestrator Pattern
 
-1. Choose the role from [docs/role-profiles/](docs/role-profiles/).
-2. Use `-p` mode unless you explicitly need an interactive TUI window.
-3. Put concrete project paths, scope, accepted facts, and acceptance criteria in the
+1. For simple tasks, use `bare` mode (omit `-Role`).
+2. For specialized work, choose the role from [docs/role-profiles/](docs/role-profiles/).
+3. Use `-p` mode unless you explicitly need an interactive TUI window.
+4. Put concrete project paths, scope, accepted facts, and acceptance criteria in the
    task prompt.
-4. Use `-InjectNormal` only for a known reusable fragment such as `question-pass`.
-5. After completion, read `result <id>` and the relevant report/artifact.
-6. Use an independent reviewer for lifecycle, protocol, persistence, or shared-contract
+5. Use `-InjectNormal` only for a known reusable fragment such as `question-pass`.
+6. After completion, read `result <id>` and the relevant report/artifact.
+7. Use an independent reviewer for lifecycle, protocol, persistence, or shared-contract
    changes.
 
 ## Important Safety Rules
 
+- **Handshake is mandatory.** Workers must set `--accepted` (or `--rejected`) before
+  any working state. If a worker produces a result without passing through `accepted`,
+  it did not read the complete task.
 - Do not use `remove all` in a shared manager unless you are deliberately cleaning a
   known isolated environment.
 - Even `wait <specific-id>` runs global `Sync-All` internally, but with `-Group`
@@ -153,6 +191,8 @@ state and schema docs for exact fields and transitions.
   `-InjectNormal` existence before creating or mutating agent entries.
 - Do not treat `result.md` as completion authority; use `.state`/`result <id>` state
   summary.
+- Prompt assembly places TASK content before the COMPLETION reminder block to
+  ensure task requirements survive any downstream truncation.
 
 ## Documentation Map
 
@@ -180,7 +220,8 @@ Short version:
 & $tui role show reviewer
 ```
 
-Then add prompt files and a profile:
+New roles are registered with the three universal states (`accepted`, `rejected`, `exit`).
+Add role-specific working states by editing `legal_state.json`. Then add prompt files and a profile:
 
 ```text
 prompt_templates/role/reviewer/system_prompt/*.md
@@ -189,6 +230,9 @@ prompt_templates/role/reviewer/normal_prompt/*.md
 prompt_templates/role/reviewer/legal_state.json
 docs/role-profiles/reviewer/README.md
 ```
+
+All directories except `legal_state.json` are optional — the `bare` role has only
+a minimal `legal_state.json` and is the best starting point.
 
 Default roles should be project-independent collaboration abstractions. Project-specific
 facts belong in task prompts or, when truly reusable, explicit normal templates. If a
