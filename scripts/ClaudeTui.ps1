@@ -35,7 +35,9 @@ if ($Command -eq "wait") {
 $Prompt    = Get-Arg "-Prompt";    if (-not $Prompt)    { $Prompt    = Get-Arg "-p" }
 $Workspace = Get-Arg "-Workspace"; if (-not $Workspace) { $Workspace = Get-Arg "-w" }
 $Role = Get-Arg "-Role"
-if (-not $Role) { $Role = Get-Arg "-r"; if (-not $Role) { $Role = "explorer" } }
+if (-not $Role) { $Role = Get-Arg "-r" }
+if (-not $Role) { $Role = "bare" }
+# bare role = universal states only, no role-specific prompt injection
 $TimeoutVal = Get-Arg "-TimeoutSeconds"
 if (-not $TimeoutVal) { $TimeoutVal = Get-Arg "-t" }
 if (-not $TimeoutVal) { $TimeoutVal = "600" }
@@ -679,6 +681,12 @@ function Sync-All {
 function Assert-SendPreflight {
     param([string]$TargetRole, [string]$TargetInjectNormal)
 
+    # Bare mode: no role means no role validation needed
+    if (-not $TargetRole) {
+        Write-Host "[MANAGER] Preflight: bare mode (no role template)"
+        return
+    }
+
     $roleDir = Join-Path $roleTemplatesDir $TargetRole
     $legalPath = Join-Path $roleDir "legal_state.json"
 
@@ -1094,7 +1102,7 @@ function Invoke-Wait {
                 return
             }
 
-            $anyRunning = ($Agents.Values | Where-Object {
+            $anyRunning = @($Agents.Values | Where-Object {
                 $_.agent_id -in $subsetTargets -and "deleted" -notin $_.status -and ("running" -in $_.status -or "finishing" -in $_.status) -and (Test-GroupFilter $_)
             }).Count -gt 0
             if (-not $anyRunning) {

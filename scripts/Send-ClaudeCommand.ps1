@@ -3,7 +3,7 @@ param(
     [string]$Prompt,
     [string]$AgentName = "claude-worker",
     [string]$Workspace = "",
-    [string]$Role = "explorer",
+    [string]$Role = "bare",
     [switch]$NoStartIfMissing,
     [switch]$FreshSession,
     [switch]$NoWait,
@@ -271,10 +271,14 @@ function Build-WorkerPrompt {
     param([string]$UserPrompt)
     # 1. Read default header template, replace role placeholder
     $headerPath = Join-Path $templatesDir "header.md"
-    $header = "[worker]`nYou are a $Role agent. Execute the task, then complete."
-    if (Test-Path -LiteralPath $headerPath -PathType Leaf) {
-        $header = (Get-Content -LiteralPath $headerPath -Raw -Encoding UTF8).Trim()
-        $header = $header -replace '~~ROLE~~', $Role
+    if ($Role -and $Role -ne "bare") {
+        $header = "[worker]`nYou are a $Role agent. Execute the task, then complete."
+        if (Test-Path -LiteralPath $headerPath -PathType Leaf) {
+            $header = (Get-Content -LiteralPath $headerPath -Raw -Encoding UTF8).Trim()
+            $header = $header -replace '~~ROLE~~', $Role
+        }
+    } else {
+        $header = "[worker]`nExecute the task, then complete."
     }
 
     # 2. Read role header_prompt/*.md files (sorted by filename) and append
