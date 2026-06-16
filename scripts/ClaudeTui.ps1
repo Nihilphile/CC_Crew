@@ -694,10 +694,10 @@ function Assert-SendPreflight {
         throw "Rejected: Role '$TargetRole' legal_state.json is not valid JSON and cannot be parsed."
     }
 
-    # 3. mandatory states: running, exit
+    # 3. mandatory states: accepted, exit
     $ls = @($legalJson.states | ForEach-Object { [string]$_ })
-    if ("running" -notin $ls) {
-        throw "Rejected: Role '$TargetRole' missing mandatory state 'running' in legal_state.json"
+    if ("accepted" -notin $ls) {
+        throw "Rejected: Role '$TargetRole' missing mandatory state 'accepted' in legal_state.json"
     }
     if ("exit" -notin $ls) {
         throw "Rejected: Role '$TargetRole' missing mandatory state 'exit' in legal_state.json"
@@ -1396,7 +1396,7 @@ function Invoke-RoleRegister {
     $legalPath = Join-Path $targetDir "legal_state.json"
     $defaultLegal = [ordered]@{
         version            = "1"
-        states             = @("running", "exit")
+        states             = @("accepted", "exit")
         exit_confirmation  = "你确认已经完整执行主控要求的结束流程，并留下主控可验收的结果或证据了吗？"
         description        = "Default legal states for $safeRole"
     }
@@ -1440,7 +1440,7 @@ function Invoke-RoleUpdate {
     if (-not (Test-Path -LiteralPath $legalPath -PathType Leaf)) {
         $defaultLegal = [ordered]@{
             version            = "1"
-            states             = @("running", "exit")
+            states             = @("accepted", "exit")
             exit_confirmation  = "你确认已经完整执行主控要求的结束流程，并留下主控可验收的结果或证据了吗？"
             description        = "Default legal states for $safeRole"
         }
@@ -1453,7 +1453,7 @@ function Invoke-RoleUpdate {
         if (-not (Test-Path -LiteralPath $StateFile -PathType Leaf)) { throw "StateFile not found: $StateFile" }
         $st = @(Get-Content -LiteralPath $StateFile | Where-Object { $_.Trim() -ne "" } | ForEach-Object { $_.Trim() })
         if ("exit" -notin $st) { $st += @("exit") }
-        if ("running" -notin $st) { $st += @("running") }
+        if ("accepted" -notin $st) { $st += @("accepted") }
         try {
             $ls = Get-Content -LiteralPath $legalPath -Raw -Encoding UTF8 | ConvertFrom-Json
             $ls.states = [array]$st

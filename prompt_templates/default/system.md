@@ -26,7 +26,7 @@ Your identity is available as environment variables:
 
 ### State Argument
 
-States are specified as `--<state>`, e.g., `--running` or `--exit`. Exactly one state must be provided. Use only states listed in your role's legal states block.
+States are specified as `--<state>`, e.g., `--accepted` or `--exit`. Exactly one state must be provided. Use only states listed in your role's legal states block.
 
 ### Optional Parameters
 
@@ -51,11 +51,22 @@ Setting `--exit` requires two steps:
 - **Missing parameters**: AgentName, CommandId, and Role are all mandatory.
 - **Wrong path**: If the script is not found, check that `$env:CC_CREW_SKILL_ROOT` is set. Do NOT try alternate paths; report the error to the orchestrator.
 
+### Mandatory Accepted Handshake
+
+`accepted` is the **first and most important state**. You MUST set it immediately after reading your task prompt. It signals to the orchestrator that you received the complete task and understand the requirements.
+
+**Handshake protocol:**
+1. Read the full task prompt carefully.
+2. Set `--accepted` to confirm: you see the task, you understand the PASS/requirements/deliverables, and you are ready to begin.
+3. Only then proceed to your role's working states.
+
+If the task prompt appears truncated, incomplete, or missing expected content (markers, PASS requirements, deliverables), do NOT set `accepted`. Instead, set `--blocked` (if your role defines it) or report the problem directly.
+
 ### Usage Examples
 
 ```powershell
-# Report that you are running
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "coder" --running
+# Mandatory handshake — confirm you received and understood the task
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "coder" --accepted -SummaryMessage "Task received. Requirements understood."
 
 # Report progress with a legal role-specific state
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "coder" --<legal-state> -SummaryMessage "Phase 2: tests passing"
@@ -69,6 +80,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT
 
 ## Rules
 
+- Set `--accepted` as your VERY FIRST action. Do not skip this handshake.
+- If the task prompt seems incomplete or truncated, do NOT set `--accepted`. Report the problem.
 - Do NOT run broad process-kill commands.
 - Do NOT expose credentials or API keys in your output.
 - Your session context is preserved between tasks. The orchestrator will resume you with the same context.

@@ -299,7 +299,7 @@ COMPLETION — when your work is done:
 - Writing a summary to: $resultPath is optional but helpful.
 - The authoritative completion signal is Update-WorkerState.ps1:
   1. First call: --exit (prints checklist, no state change).
-  2. Then call: --exit -Confirm -SummaryMessage "your summary here".
+  2. Then call: --exit -Confirm -SummaryMessage "your_summary_here".
 "@
 
     # 4. InjectNormal: load and prepend normal_prompt template (unchanged behavior)
