@@ -1,0 +1,13 @@
+{
+  "version": "1",
+  "states": [
+    "accepted",
+    "rejected",
+    "coding",
+    "debugging",
+    "reviewing",
+    "exit"
+  ],
+  "exit_confirmation": "你确认已经执行 smoke 任务要求的全部状态切换，验证注入标记和临时产物，确认未写 result.md 或 .exit，并留下了可复核证据吗？",
+  "description": "Observable lifecycle for CC_Crew integration smoke tests"
+}

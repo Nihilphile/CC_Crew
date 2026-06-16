@@ -1,0 +1,14 @@
+{
+  "version": "1",
+  "states": [
+    "accepted",
+    "rejected",
+    "inspecting",
+    "reviewing",
+    "verifying",
+    "blocked",
+    "exit"
+  ],
+  "exit_confirmation": "你确认已经审查当前 artifact，按严重度给出 findings 或明确无阻断问题，标明证据、验证缺口和最终 verdict，并且没有越权修改文件或替主控做最终验收决定吗？",
+  "description": "Independent review lifecycle for reviewer role"
+}

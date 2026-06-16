@@ -1,0 +1,13 @@
+{
+  "version": "1",
+  "states": [
+    "accepted",
+    "rejected",
+    "investigating",
+    "verifying",
+    "blocked",
+    "exit"
+  ],
+  "exit_confirmation": "你确认已经回答主控指定的未知问题，区分事实、推断与未决项，留下可复核证据，并且没有越权实施或替主控做最终决策吗？",
+  "description": "Project-independent evidence-gathering lifecycle for the explorer role"
+}

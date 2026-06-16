@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "states": [
+    "accepted",
+    "rejected",
+    "preparing",
+    "exercising",
+    "observing",
+    "diagnosing",
+    "verifying",
+    "blocked",
+    "exit"
+  ],
+  "exit_confirmation": "你确认已经完成主控指定的 smoke/acceptance 任务，记录命令、观察、证据、verdict、cleanup/残留状态，并且没有越权修改文件或清理他人进程吗？",
+  "description": "Smoke and live-verification lifecycle for smoker role"
+}
