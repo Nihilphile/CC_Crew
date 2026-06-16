@@ -7,16 +7,22 @@ You are running in an automated pipeline as a worker agent. No interactive confi
 The ONLY worker-facing lifecycle/state interface is `Update-WorkerState.ps1`. This is how you report progress and signal completion to the orchestrator.
 
 ```
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<skillRoot>/scripts/Update-WorkerState.ps1" -AgentName "<your-agent>" -CommandId "<command-id>" -Role "<your-role>" --<legal-state>
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "<your-role>" --<legal-state>
 ```
+
+Your identity is available as environment variables:
+- `$env:CC_CREW_SKILL_ROOT` — path to the CC_Crew skill directory (use this for the `-File` path)
+- `$env:CC_CREW_AGENT` — your agent ID
+- `$env:CC_CREW_COMMAND_ID` — your command ID
+**Always use these env vars. Do not guess or construct the path manually.**
 
 ### Required Parameters
 
 | Parameter | Description |
 |-----------|-------------|
-| `-AgentName` | Your agent ID (provided in task header) |
-| `-CommandId` | Your command ID (provided in task header) |
-| `-Role` | Your assigned role name (provided in task header). Must match the role assigned by the orchestrator. |
+| `-AgentName` | Your agent ID. Use `$env:CC_CREW_AGENT`. |
+| `-CommandId` | Your command ID. Use `$env:CC_CREW_COMMAND_ID`. |
+| `-Role` | Your assigned role name (provided in your task header). Must match the role assigned by the orchestrator. |
 
 ### State Argument
 
@@ -43,21 +49,22 @@ Setting `--exit` requires two steps:
 - **Role mismatch**: If `-Role` does not match the role assigned to your task, the command will hard error.
 - **Illegal state**: If you specify a state not in your role's `legal_state.json`, the command will hard error and list all legal states.
 - **Missing parameters**: AgentName, CommandId, and Role are all mandatory.
+- **Wrong path**: If the script is not found, check that `$env:CC_CREW_SKILL_ROOT` is set. Do NOT try alternate paths; report the error to the orchestrator.
 
 ### Usage Examples
 
 ```powershell
 # Report that you are running
-powershell ... -AgentName "my-coder" -CommandId "20260615-..." -Role "coder" --running
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "coder" --running
 
-# Report progress with a legal role-specific state when your role defines one
-powershell ... -AgentName "my-coder" -CommandId "20260615-..." -Role "coder" --<legal-state> -SummaryMessage "Phase 2: tests passing"
+# Report progress with a legal role-specific state
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "coder" --<legal-state> -SummaryMessage "Phase 2: tests passing"
 
 # First exit call — prints checklist, no state change
-powershell ... -AgentName "my-coder" -CommandId "20260615-..." -Role "coder" --exit
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "coder" --exit
 
 # Second exit call — confirms and writes exit state
-powershell ... -AgentName "my-coder" -CommandId "20260615-..." -Role "coder" --exit -Confirm -SummaryMessage "All tasks complete, results in store/"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "coder" --exit -Confirm -SummaryMessage "All tasks complete, results in store/"
 ```
 
 ## Rules

@@ -291,8 +291,6 @@ function Build-WorkerPrompt {
     }
 
     # 3. Build completion reminder (brief, v2 protocol)
-    # NOTE: avoid angle-brackets-in-quotes (<your>) which may trigger
-    # downstream truncation in the Claude CLI prompt pipeline.
     $reminder = @"
 
 Automated pipeline. No confirmation needed. No exploring beyond the task.
@@ -519,6 +517,7 @@ chcp 65001 | Out-Null
 `$env:CC_CREW_AGENT = "$AgentName"
 `$env:CC_CREW_COMMAND_ID = "$commandId"
 `$env:CC_CREW_LIVE_ROOT = "$storeRoot"
+`$env:CC_CREW_SKILL_ROOT = "$skillRoot"
 
 Write-Host "========================================"
 Write-Host "  CC_Crew [TUI MODE]"
@@ -581,6 +580,7 @@ chcp 65001 | Out-Null
 `$env:CC_CREW_AGENT = "$AgentName"
 `$env:CC_CREW_COMMAND_ID = "$commandId"
 `$env:CC_CREW_LIVE_ROOT = "$storeRoot"
+`$env:CC_CREW_SKILL_ROOT = "$skillRoot"
 
 Write-Host "========================================"
 Write-Host "  CC_Crew"
