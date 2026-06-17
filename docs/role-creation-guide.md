@@ -66,14 +66,27 @@ Registration creates:
 ```text
 prompt_templates/role/explorer/
 ├── system_prompt/
+│   └── 20-state-semantics.md ← auto-generated: universal states pre-filled,
+│                                role-specific table empty — you fill it in
 ├── header_prompt/
 ├── normal_prompt/
-└── legal_state.json
+└── legal_state.json         ← states: accepted, rejected, exit
 ```
 
-Place Markdown files directly in the three prompt directories. Files in the system
-and header directories are concatenated alphabetically, so use numeric prefixes when
-ordering matters.
+The auto-generated `20-state-semantics.md` already contains the universal states
+(`accepted`, `rejected`, `exit`) with full trigger and prohibition definitions.
+You only need to add your role-specific states to the placeholder table.
+
+Typical files added by the role creator:
+
+```text
+system_prompt/10-role-boundary.md   ← authority, boundaries, escalation rules
+system_prompt/20-state-semantics.md ← edit the role-specific table (file already exists)
+system_prompt/30-delivery-contract.md ← evidence standards, report shapes, verdicts
+header_prompt/10-<role>-preamble.md ← short identity and stance
+header_prompt/20-state-reminder.md   ← compact trigger summary
+normal_prompt/<name>.md             ← one file per reusable workflow variant
+```
 
 Then create the orchestrator-facing profile:
 
