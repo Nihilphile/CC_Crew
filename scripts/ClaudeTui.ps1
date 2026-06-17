@@ -1410,6 +1410,14 @@ function Invoke-RoleRegister {
     }
     $defaultLegal | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $legalPath -Encoding UTF8
 
+    # Write default state semantics (universal states pre-filled, role-specific section empty)
+    # Use a mix of here-strings to avoid PowerShell interpreting backtick-escapes
+    # (tick-a = BEL, tick-r = CR, tick-e = ESC) inside the markdown content.
+    $semanticsPath = Join-Path $sysDir "20-state-semantics.md"
+    $semanticsHead = "# $RoleName State Semantics`r`n`r`nStates are **situational triggers**, not optional labels.`r`n**When your real posture matches a trigger → you MUST call " + '`Update-WorkerState.ps1`' + ".`r`nWhen it does not match → you MUST NOT.**`r`n`r`n## Universal States`r`n`r`nThese three states apply to every worker regardless of role.`r`n`r`n| State | Trigger — MUST set when... | Forbidden — MUST NOT set when... |`r`n|-------|---------------------------|----------------------------------|`r`n| " + '`accepted`' + " | You have **finished reading the complete task** and confirmed all expected sections (markers, requirements, deliverables) are present. This is your FIRST action before any work. | Prompt is truncated or incomplete. You haven't read the full task yet. After any other state. |`r`n| " + '`rejected`' + " | The task prompt is **truncated, incomplete, or missing expected content**, and you cannot safely proceed. | The task is complete and understandable. After you have already set " + '`accepted`' + ". |`r`n| " + '`exit`' + " | **All work is done.** Required artifacts exist, evidence is documented, and you are ready for cleanup. Two-step: " + '`--exit`' + " (prints checklist), then " + '`--exit -Confirm`' + " (writes final state). | Work is incomplete. Required evidence is missing. You have not set " + '`accepted`' + " first. |`r`n`r`n## $RoleName-Specific States`r`n`r`n*Add your role-specific states below. Each state must define a trigger (when to enter) and a prohibition (when not to enter). Delete this comment block after filling in the table.*`r`n`r`n| State | Trigger — MUST set when... | Forbidden — MUST NOT set when... |`r`n|-------|---------------------------|----------------------------------|`r`n| *example* | *describe the exact situational condition that requires this state* | *describe when this state must NOT be used, even if legal* |`r`n`r`n## Rules`r`n`r`n- " + '`accepted`' + " MUST be your first state. Never skip this handshake.`r`n- " + '`exit`' + " MUST be your last state. Use the two-step " + '`--exit`' + " / " + '`--exit -Confirm`' + " process.`r`n- When the orchestrator explicitly names a state in the task, you MUST enter it.`r`n- Never repeat the same state without a genuine posture change.`r`n"
+    $defaultSemantics = $semanticsHead
+    Set-Content -LiteralPath $semanticsPath -Value $defaultSemantics -Encoding UTF8
+
     $now = (Get-Date).ToString("o")
     $roles[$safeRole] = [ordered]@{
         role_name      = $safeRole
@@ -1423,8 +1431,10 @@ function Invoke-RoleRegister {
     Write-Host "  Directories: system_prompt/, header_prompt/, normal_prompt/"
     Write-Host "  legal_state.json: $legalPath"
     Write-Host "  States: accepted, rejected, exit"
+    Write-Host "  State semantics: $semanticsPath  (universal states pre-filled)"
     Write-Host ""
-    Write-Host "  Next: add system_prompt/*.md, header_prompt/*.md, normal_prompt/*.md."
+    Write-Host "  Next: edit 20-state-semantics.md to add role-specific state triggers,"
+    Write-Host "  then add 10-role-boundary.md and 30-delivery-contract.md."
     Write-Host "  See docs/role-creation-guide.md for the full checklist."
 }
 
