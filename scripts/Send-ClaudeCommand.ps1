@@ -613,7 +613,15 @@ if ("$curSessionId" -ne "") {
 if (`$exit -eq 0 -and `$jsonOut) {
     try {
         `$j = `$jsonOut | ConvertFrom-Json
-        Set-Content "$resultPath" `$j.result -Encoding UTF8
+        # Guard: if worker already wrote result.md via Edit, don't overwrite it.
+        # Claude's final text response is often just a brief summary.
+        # Only write Claude's output when result.md is empty/missing.
+        `$existingResult = if (Test-Path "$resultPath") { (Get-Content "$resultPath" -Raw -Encoding UTF8).Trim() } else { "" }
+        if (`$existingResult.Length -eq 0 -or `$existingResult -eq "Loading...") {
+            Set-Content "$resultPath" `$j.result -Encoding UTF8
+        } else {
+            Write-Host "[RUNNER] result.md already has `$(`$existingResult.Length) chars, keeping worker-written content"
+        }
         `$sid = if (`$j.session_id) { `$j.session_id } else { "$curSessionId" }
         # Store real Claude UUID for manager to pick up
         `$sidFile = Join-Path "$storeRoot" ".claude-sid.txt"
