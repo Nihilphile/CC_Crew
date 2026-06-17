@@ -1,8 +1,8 @@
 # Creating Roles (v2)
 
 Roles are project-independent collaboration contracts designed by the orchestrator.
-They define durable authority, boundaries, evidence standards, and observable work
-states. Project paths, concrete objectives, acceptance criteria, and one-off
+They define durable authority, boundaries, evidence standards, and situational
+trigger states. Project paths, concrete objectives, acceptance criteria, and one-off
 instructions belong in the task prompt instead.
 
 Each role should also have a short orchestrator-facing profile under
@@ -18,7 +18,7 @@ Before registering a role, answer these questions:
 3. What must remain owned by the orchestrator or another role?
 4. What evidence is required before it may claim success?
 5. When must it stop and escalate?
-6. Which work states are useful for an external observer?
+6. Which observable postures should trigger a state update? For each, what is the exact trigger condition and what is the prohibition?
 
 If these answers depend on one repository or one task, they are probably task-prompt
 content rather than role content.
@@ -48,7 +48,7 @@ mistaken for generic roles.
 | Short identity, stance, and default delivery shape | `header_prompt/*.md` | Always injected into the task preamble |
 | Frequently reused workflow variants | `normal_prompt/<name>.md` | Injected only with `-InjectNormal <name>` |
 | Repository paths, objective, scope, accepted facts, acceptance criteria | Task `-Prompt` | Supplied by the orchestrator for each command |
-| Observable legal work states and exit confirmation | `legal_state.json` | Validated by the manager and state-update command |
+| Trigger-driven state definitions and exit confirmation | `legal_state.json` | Validated by the manager and state-update command |
 
 Do not duplicate the same long instructions across layers. Put durable rules in the
 system layer, a compact reminder in the header, and optional procedures in normal
@@ -85,7 +85,7 @@ The profile should briefly document:
 
 - when to use the role;
 - when not to use it;
-- legal states and state-selection notes;
+- legal states with trigger conditions;
 - available normal templates;
 - expected output types;
 - an orchestrator checklist for sending tasks.
@@ -197,18 +197,25 @@ Then verify the role with a bounded smoke:
 - Putting optional procedures in the always-injected system prompt.
 - Using `normal_prompt` as an automatic task body.
 - Adding states without defining when each state should be selected.
-- Presenting ordinary role states as a required linear path instead of current-work
-  labels.
+- Defining states as vague labels ("use this state when coding") instead of
+  precise triggers with both a required-entry condition and a forbidden-entry
+  condition.
 - Making `result.md` or another fixed artifact part of the exit contract.
 - Treating registration alone as proof that prompt injection and state validation work.
 - Forgetting to create or update `docs/role-profiles/<role>/README.md`.
 - Creating a generic-looking role that actually contains project-private assumptions.
+- Expecting the worker to self-report `accepted` without understanding the handshake
+  protocol. Workers need explicit triggers, not polite suggestions.
 
 ## Storage And Sharing
 
-Role directories and `prompt_templates/roles.json` are local runtime configuration and
-are gitignored by default. A registered role is immediately usable on the current
-machine but is not automatically distributed with the repository.
+Role directories under `prompt_templates/role/` are tracked in git and ship with the
+repository. The `bare`, `coder`, `explorer`, `reviewer`, `smoker`, and `test` roles
+are built-in defaults.
 
-If roles should ship as built-in assets, define an explicit tracked role-pack location
-or packaging/import mechanism rather than relying on local registration state.
+`prompt_templates/roles.json` remains gitignored — it is the local registration
+registry mapping role names to their directory structure. After cloning, run
+`role register` for each role directory to populate the registry.
+
+For custom roles created locally, simply commit the role directory. Other
+collaborators can register it with `role register <name>`.
