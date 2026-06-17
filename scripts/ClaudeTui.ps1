@@ -1422,9 +1422,10 @@ function Invoke-RoleRegister {
     Write-Host "[MANAGER] Role '$safeRole' registered (v2 structure)"
     Write-Host "  Directories: system_prompt/, header_prompt/, normal_prompt/"
     Write-Host "  legal_state.json: $legalPath"
-    Write-Host "  States: running, exit"
+    Write-Host "  States: accepted, rejected, exit"
     Write-Host ""
-    Write-Host "  Next: add .md files to system_prompt/, header_prompt/, normal_prompt/ as needed."
+    Write-Host "  Next: add system_prompt/*.md, header_prompt/*.md, normal_prompt/*.md."
+    Write-Host "  See docs/role-creation-guide.md for the full checklist."
 }
 
 function Invoke-RoleUpdate {
