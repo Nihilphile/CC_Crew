@@ -547,7 +547,7 @@ if ("$curSessionId" -ne "") {
 }
 # Pass prompt as variable — avoids double-quote issues from prompt content
 `$promptContent = Get-Content -LiteralPath "$promptPath" -Raw -Encoding UTF8
-if (`$promptContent) { `$fullArgs += ,`$promptContent }
+if (`$promptContent) { `$fullArgs += "--"; `$fullArgs += ,`$promptContent }
 
 # Append system prompt (runtime contract, compression-resistant)
 if ("$systemPromptPath" -ne "") { `$fullArgs += @("--system-prompt-file", "$systemPromptPath") }
@@ -604,9 +604,9 @@ Set-Location -LiteralPath "$Workspace"
 
 # -p mode. If session UUID provided, resume it; otherwise start fresh.
 if ("$curSessionId" -ne "") {
-    `$jsonOut = & claude @baseArgs --resume "$curSessionId" -p --output-format json `$workerPrompt `$sysPromptArgs
+    `$jsonOut = & claude @baseArgs --resume "$curSessionId" -p --output-format json -- `$workerPrompt `$sysPromptArgs
 } else {
-    `$jsonOut = & claude @baseArgs -p --output-format json `$workerPrompt `$sysPromptArgs
+    `$jsonOut = & claude @baseArgs -p --output-format json -- `$workerPrompt `$sysPromptArgs
 }
 `$exit = `$LASTEXITCODE
 
