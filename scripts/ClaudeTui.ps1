@@ -304,13 +304,16 @@ function Get-ClaudeProjectDir {
 function Capture-FreshSessionUuid {
     param([string]$WorkspacePath, [int]$WaitSeconds = 4)
     Start-Sleep -Seconds $WaitSeconds
+    $now = Get-Date
     $projDir = Get-ClaudeProjectDir $WorkspacePath
     if (-not (Test-Path $projDir)) { return $null }
-    $newest = Get-ChildItem (Join-Path $projDir "*.jsonl") -ErrorAction SilentlyContinue |
-        Sort-Object CreationTime -Descending |
+    $candidates = Get-ChildItem (Join-Path $projDir "*.jsonl") -ErrorAction SilentlyContinue |
+        Where-Object { ($now - $_.LastWriteTime).TotalSeconds -lt 60 } |
+        Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
-    if (-not $newest) { return $null }
-    return $newest.BaseName
+    if (-not $candidates) { return $null }
+    Write-Host "[MANAGER] Fresh session candidate: $($candidates.BaseName) ($([math]::Floor(($now - $candidates.LastWriteTime).TotalSeconds))s ago)"
+    return $candidates.BaseName
 }
 
 # ====================================================
