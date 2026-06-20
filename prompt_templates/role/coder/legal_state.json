@@ -1,0 +1,14 @@
+{
+  "version": "1",
+  "states": [
+    "accepted",
+    "rejected",
+    "inspecting",
+    "questioning",
+    "coding",
+    "verifying",
+    "exit"
+  ],
+  "exit_confirmation": "你确认本轮 coder 职责已经完成了吗？如果是施工轮，是否已按 scope 修改并验证；如果是 question-pass，是否已列出隐式决策点和需要主控裁决的问题；如果是 blocker，是否已写明事实、失败、尝试和所需决策？",
+  "description": "Bounded implementation lifecycle for coder role"
+}

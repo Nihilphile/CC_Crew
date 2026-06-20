@@ -15,7 +15,7 @@ updates, normal-template selection, and completion behavior.
 
 ## States
 
-`running`, `coding`, `debugging`, `reviewing`, `exit`
+`accepted`, `rejected`, `coding`, `debugging`, `reviewing`, `exit`
 
 The `test` role is allowed to exercise ordered state changes because it is a protocol
 smoke role. The required sequence, if any, belongs in the selected normal prompt or

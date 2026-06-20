@@ -9,12 +9,12 @@ USAGE:
   powershell.exe -NoProfile -File Update-WorkerState.ps1 -AgentName <agent> -CommandId <id> -Role <role> --<legal-state> [-Confirm] [-SummaryMessage <text>]
 
   Examples:
-    ... -AgentName my-agent -CommandId 20260615-... -Role coder --running
-    ... -AgentName my-agent -CommandId 20260615-... -Role coder --running -SummaryMessage "Implementing phase 2"
+    ... -AgentName my-agent -CommandId 20260615-... -Role coder --accepted
+    ... -AgentName my-agent -CommandId 20260615-... -Role coder --accepted -SummaryMessage "Task received and understood"
     ... -AgentName my-agent -CommandId 20260615-... -Role coder --exit
     ... -AgentName my-agent -CommandId 20260615-... -Role coder --exit -Confirm -SummaryMessage "All done"
 
-  v2 uses --<legal-state> syntax (e.g. --running, --exit). The legacy -State parameter is NOT supported.
+  v2 uses --<legal-state> syntax (e.g. --accepted, --exit). The legacy -State parameter is NOT supported.
 #>
 
 Set-StrictMode -Version Latest
@@ -65,7 +65,7 @@ while ($i -lt $args.Count) {
         $SummaryMessage = $next; $i += 2; continue
     }
     elseif ($lc -eq '-state') {
-        Write-Error "v2 does not use -State. Use --<legal-state> syntax. Examples: --running, --exit, --exit -Confirm"
+        Write-Error "v2 does not use -State. Use --<legal-state> syntax. Examples: --accepted, --rejected, --exit, --exit -Confirm"
         Write-Error "Usage: powershell ... -AgentName <agent> -CommandId <id> -Role <role> --<legal-state>"
         exit 1
     }
@@ -109,7 +109,7 @@ if (-not $Role) {
     exit 1
 }
 if (-not $stateArg) {
-    Write-Error "Missing state argument. Use exactly one --<legal-state>. Examples: --running, --exit"
+    Write-Error "Missing state argument. Use exactly one --<legal-state>. Examples: --accepted, --rejected, --exit"
     Write-Error "Usage: ... -AgentName <agent> -CommandId <id> -Role <role> --<legal-state>"
     exit 1
 }

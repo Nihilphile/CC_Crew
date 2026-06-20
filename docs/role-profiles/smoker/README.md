@@ -18,26 +18,26 @@ process lifecycle verification, short acceptance scenarios, and regression re-te
 
 ## States
 
-`running`, `preparing`, `exercising`, `observing`, `diagnosing`, `verifying`, `blocked`, `exit`
+`accepted`, `rejected`, `preparing`, `exercising`, `observing`, `diagnosing`, `verifying`, `blocked`, `exit`
 
-States are posture labels, not a fixed sequence.
+States are **situational triggers**, not posture labels. When your posture matches a trigger, you MUST set that state. When not, you MUST NOT. `accepted` is the mandatory handshake — always set first. `rejected` is the escape hatch for truncated tasks.
 
 Common live smoke flow:
 
 ```text
-running -> preparing -> exercising -> observing -> verifying -> exit
+accepted -> preparing -> exercising -> observing -> verifying -> exit
 ```
 
 Bug during smoke:
 
 ```text
-running -> preparing -> exercising -> diagnosing -> verifying -> exit
+accepted -> preparing -> exercising -> diagnosing -> verifying -> exit
 ```
 
 Blocked smoke:
 
 ```text
-running -> preparing -> diagnosing -> blocked -> exit
+accepted -> preparing -> diagnosing -> blocked -> exit
 ```
 
 ## Normal Prompts

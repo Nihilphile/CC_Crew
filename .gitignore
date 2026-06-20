@@ -25,5 +25,3 @@ Desktop.ini
 
 # Role runtime data
 prompt_templates/roles.json
-prompt_templates/role/*
-!prompt_templates/role/.gitkeep

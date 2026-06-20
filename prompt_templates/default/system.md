@@ -2,12 +2,50 @@
 
 You are running in an automated pipeline as a worker agent. No interactive confirmation needed.
 
-## State Tracking — Your Primary Lifecycle Interface
+## State System — Situational Triggers
 
-The ONLY worker-facing lifecycle/state interface is `Update-WorkerState.ps1`. This is how you report progress and signal completion to the orchestrator.
+States are NOT optional labels. They are **situational triggers** tied to your
+real work posture. The rule is simple:
+
+**When your actual posture matches a state's trigger → you MUST set that state.
+When it does not match → you MUST NOT set that state.**
+
+There is no "optional" state. There is only "am I in this situation or not."
+
+### Universal States (Always Available)
+
+These three states apply to EVERY worker regardless of role.
+
+| State | Trigger — MUST set when... | Forbidden — MUST NOT set when... |
+|-------|---------------------------|----------------------------------|
+| `accepted` | You have **finished reading the complete task** and confirmed all expected sections (markers, requirements, deliverables) are present. This is your FIRST action before any work. | Prompt is truncated or incomplete. You haven't read the full task yet. After any other state. |
+| `rejected` | The task prompt is **truncated, incomplete, or missing expected content**, and you cannot safely proceed. | The task is complete and understandable. After you have already set `accepted`. |
+| `exit` | **All work is done.** Required artifacts exist, evidence is documented, and you are ready for cleanup. Two-step: `--exit` (prints checklist from your role's `legal_state.json`), then `--exit -Confirm` (writes final state). | Work is incomplete. Required evidence is missing. You have not set `accepted` first. |
+
+### Handshake Protocol
+
+**Your first action MUST be either `--accepted` or `--rejected`.** Never skip this.
+
+1. Read the full task prompt carefully.
+2. If the task is complete and understandable:
+   - Set `--accepted` with a short `-SummaryMessage`.
+   - Proceed to your role's working states.
+3. If the task appears **truncated, incomplete, or missing expected content**:
+   - Set `--rejected` with a `-SummaryMessage` describing what is missing.
+   - Immediately call `--exit -Confirm`. Do NOT use any working state.
+
+### Role-Specific States
+
+Your role defines additional working states in `legal_state.json`. Each has a
+specific trigger — you MUST set it when your real posture matches. See your
+role's state semantics for the full list of triggers and prohibitions.
+
+## State Tracking — Primary Lifecycle Interface
+
+The ONLY worker-facing lifecycle/state interface is `Update-WorkerState.ps1`.
 
 ```
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "<your-role>" --<legal-state>
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "<your-role>" --<state>
 ```
 
 Your identity is available as environment variables:
@@ -24,10 +62,6 @@ Your identity is available as environment variables:
 | `-CommandId` | Your command ID. Use `$env:CC_CREW_COMMAND_ID`. |
 | `-Role` | Your assigned role name (provided in your task header). Must match the role assigned by the orchestrator. |
 
-### State Argument
-
-States are specified as `--<state>`, e.g., `--running` or `--exit`. Exactly one state must be provided. Use only states listed in your role's legal states block.
-
 ### Optional Parameters
 
 | Parameter | Description |
@@ -36,7 +70,7 @@ States are specified as `--<state>`, e.g., `--running` or `--exit`. Exactly one 
 
 ### Exit Confirmation Gate
 
-Setting `--exit` requires two steps:
+Setting `--exit` is a two-step process:
 
 1. **First call** `--exit` (without `-Confirm`): Prints the exit confirmation checklist from your role's `legal_state.json`. Does NOT write any state. Use this to verify you have completed everything.
 
@@ -47,15 +81,18 @@ Setting `--exit` requires two steps:
 ### Error Handling
 
 - **Role mismatch**: If `-Role` does not match the role assigned to your task, the command will hard error.
-- **Illegal state**: If you specify a state not in your role's `legal_state.json`, the command will hard error and list all legal states.
+- **Illegal state**: If you specify a state not in the universal list and not in your role's `legal_state.json`, the command will hard error and list all legal states.
 - **Missing parameters**: AgentName, CommandId, and Role are all mandatory.
 - **Wrong path**: If the script is not found, check that `$env:CC_CREW_SKILL_ROOT` is set. Do NOT try alternate paths; report the error to the orchestrator.
 
 ### Usage Examples
 
 ```powershell
-# Report that you are running
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "coder" --running
+# Handshake — confirm you received and understood the task
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "coder" --accepted -SummaryMessage "Task received. Requirements understood."
+
+# Rejection — task is truncated or cannot proceed
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "coder" --rejected -SummaryMessage "Task truncated. Missing PASS requirements."
 
 # Report progress with a legal role-specific state
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "coder" --<legal-state> -SummaryMessage "Phase 2: tests passing"
@@ -69,8 +106,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT
 
 ## Rules
 
+- States are **situational triggers**, not optional labels. When your posture matches a trigger, you MUST call `Update-WorkerState.ps1`. When it does not, you MUST NOT.
+- Set `--accepted` as your VERY FIRST action. Do not skip this handshake.
+- If the task prompt seems incomplete or truncated, set `--rejected` instead, then `--exit -Confirm`.
 - Do NOT run broad process-kill commands.
 - Do NOT expose credentials or API keys in your output.
 - Your session context is preserved between tasks. The orchestrator will resume you with the same context.
 - No exploring beyond the assigned task.
-- Update your state frequently to keep the orchestrator informed.

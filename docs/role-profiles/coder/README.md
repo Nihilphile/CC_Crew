@@ -14,13 +14,9 @@ allowed scope, accepted baseline, and verification expectations.
 
 ## States
 
-`running`, `inspecting`, `questioning`, `coding`, `verifying`, `exit`
+`accepted`, `rejected`, `inspecting`, `questioning`, `coding`, `verifying`, `exit`
 
-States are observable work stage labels, not a workflow graph. Only `running`
-and confirmed `exit` are mandatory. After `running`, the coder should report
-whichever legal state best matches the real current phase. Never require a
-worker to visit every listed state unless the task is explicitly testing state
-transitions.
+States are **situational triggers** — when your posture matches a trigger, you MUST set that state. When not, you MUST NOT. `accepted` (handshake) and `exit` are mandatory for every worker. After `accepted`, enter the state whose trigger matches your real current phase.
 
 State selection notes:
 

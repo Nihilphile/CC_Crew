@@ -35,7 +35,9 @@ if ($Command -eq "wait") {
 $Prompt    = Get-Arg "-Prompt";    if (-not $Prompt)    { $Prompt    = Get-Arg "-p" }
 $Workspace = Get-Arg "-Workspace"; if (-not $Workspace) { $Workspace = Get-Arg "-w" }
 $Role = Get-Arg "-Role"
-if (-not $Role) { $Role = Get-Arg "-r"; if (-not $Role) { $Role = "explorer" } }
+if (-not $Role) { $Role = Get-Arg "-r" }
+if (-not $Role) { $Role = "bare" }
+# bare role = universal states only, no role-specific prompt injection
 $TimeoutVal = Get-Arg "-TimeoutSeconds"
 if (-not $TimeoutVal) { $TimeoutVal = Get-Arg "-t" }
 if (-not $TimeoutVal) { $TimeoutVal = "600" }
@@ -682,6 +684,12 @@ function Sync-All {
 function Assert-SendPreflight {
     param([string]$TargetRole, [string]$TargetInjectNormal)
 
+    # Bare mode: no role means no role validation needed
+    if (-not $TargetRole) {
+        Write-Host "[MANAGER] Preflight: bare mode (no role template)"
+        return
+    }
+
     $roleDir = Join-Path $roleTemplatesDir $TargetRole
     $legalPath = Join-Path $roleDir "legal_state.json"
 
@@ -697,10 +705,10 @@ function Assert-SendPreflight {
         throw "Rejected: Role '$TargetRole' legal_state.json is not valid JSON and cannot be parsed."
     }
 
-    # 3. mandatory states: running, exit
+    # 3. mandatory states: accepted, exit
     $ls = @($legalJson.states | ForEach-Object { [string]$_ })
-    if ("running" -notin $ls) {
-        throw "Rejected: Role '$TargetRole' missing mandatory state 'running' in legal_state.json"
+    if ("accepted" -notin $ls) {
+        throw "Rejected: Role '$TargetRole' missing mandatory state 'accepted' in legal_state.json"
     }
     if ("exit" -notin $ls) {
         throw "Rejected: Role '$TargetRole' missing mandatory state 'exit' in legal_state.json"
@@ -1097,7 +1105,7 @@ function Invoke-Wait {
                 return
             }
 
-            $anyRunning = ($Agents.Values | Where-Object {
+            $anyRunning = @($Agents.Values | Where-Object {
                 $_.agent_id -in $subsetTargets -and "deleted" -notin $_.status -and ("running" -in $_.status -or "finishing" -in $_.status) -and (Test-GroupFilter $_)
             }).Count -gt 0
             if (-not $anyRunning) {
@@ -1399,11 +1407,19 @@ function Invoke-RoleRegister {
     $legalPath = Join-Path $targetDir "legal_state.json"
     $defaultLegal = [ordered]@{
         version            = "1"
-        states             = @("running", "exit")
+        states             = @("accepted", "rejected", "exit")
         exit_confirmation  = "你确认已经完整执行主控要求的结束流程，并留下主控可验收的结果或证据了吗？"
         description        = "Default legal states for $safeRole"
     }
     $defaultLegal | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $legalPath -Encoding UTF8
+
+    # Write default state semantics (universal states pre-filled, role-specific section empty)
+    # Use a mix of here-strings to avoid PowerShell interpreting backtick-escapes
+    # (tick-a = BEL, tick-r = CR, tick-e = ESC) inside the markdown content.
+    $semanticsPath = Join-Path $sysDir "20-state-semantics.md"
+    $semanticsHead = "# $RoleName State Semantics`r`n`r`nStates are **situational triggers**, not optional labels.`r`n**When your real posture matches a trigger → you MUST call " + '`Update-WorkerState.ps1`' + ".`r`nWhen it does not match → you MUST NOT.**`r`n`r`n## Universal States`r`n`r`nThese three states apply to every worker regardless of role.`r`n`r`n| State | Trigger — MUST set when... | Forbidden — MUST NOT set when... |`r`n|-------|---------------------------|----------------------------------|`r`n| " + '`accepted`' + " | You have **finished reading the complete task** and confirmed all expected sections (markers, requirements, deliverables) are present. This is your FIRST action before any work. | Prompt is truncated or incomplete. You haven't read the full task yet. After any other state. |`r`n| " + '`rejected`' + " | The task prompt is **truncated, incomplete, or missing expected content**, and you cannot safely proceed. | The task is complete and understandable. After you have already set " + '`accepted`' + ". |`r`n| " + '`exit`' + " | **All work is done.** Required artifacts exist, evidence is documented, and you are ready for cleanup. Two-step: " + '`--exit`' + " (prints checklist), then " + '`--exit -Confirm`' + " (writes final state). | Work is incomplete. Required evidence is missing. You have not set " + '`accepted`' + " first. |`r`n`r`n## $RoleName-Specific States`r`n`r`n*Add your role-specific states below. Each state must define a trigger (when to enter) and a prohibition (when not to enter). Delete this comment block after filling in the table.*`r`n`r`n| State | Trigger — MUST set when... | Forbidden — MUST NOT set when... |`r`n|-------|---------------------------|----------------------------------|`r`n| *example* | *describe the exact situational condition that requires this state* | *describe when this state must NOT be used, even if legal* |`r`n`r`n## Rules`r`n`r`n- " + '`accepted`' + " MUST be your first state. Never skip this handshake.`r`n- " + '`exit`' + " MUST be your last state. Use the two-step " + '`--exit`' + " / " + '`--exit -Confirm`' + " process.`r`n- When the orchestrator explicitly names a state in the task, you MUST enter it.`r`n- Never repeat the same state without a genuine posture change.`r`n"
+    $defaultSemantics = $semanticsHead
+    Set-Content -LiteralPath $semanticsPath -Value $defaultSemantics -Encoding UTF8
 
     $now = (Get-Date).ToString("o")
     $roles[$safeRole] = [ordered]@{
@@ -1417,9 +1433,12 @@ function Invoke-RoleRegister {
     Write-Host "[MANAGER] Role '$safeRole' registered (v2 structure)"
     Write-Host "  Directories: system_prompt/, header_prompt/, normal_prompt/"
     Write-Host "  legal_state.json: $legalPath"
-    Write-Host "  States: running, exit"
+    Write-Host "  States: accepted, rejected, exit"
+    Write-Host "  State semantics: $semanticsPath  (universal states pre-filled)"
     Write-Host ""
-    Write-Host "  Next: add .md files to system_prompt/, header_prompt/, normal_prompt/ as needed."
+    Write-Host "  Next: edit 20-state-semantics.md to add role-specific state triggers,"
+    Write-Host "  then add 10-role-boundary.md and 30-delivery-contract.md."
+    Write-Host "  See docs/role-creation-guide.md for the full checklist."
 }
 
 function Invoke-RoleUpdate {
@@ -1443,7 +1462,7 @@ function Invoke-RoleUpdate {
     if (-not (Test-Path -LiteralPath $legalPath -PathType Leaf)) {
         $defaultLegal = [ordered]@{
             version            = "1"
-            states             = @("running", "exit")
+            states             = @("accepted", "exit")
             exit_confirmation  = "你确认已经完整执行主控要求的结束流程，并留下主控可验收的结果或证据了吗？"
             description        = "Default legal states for $safeRole"
         }
@@ -1456,7 +1475,7 @@ function Invoke-RoleUpdate {
         if (-not (Test-Path -LiteralPath $StateFile -PathType Leaf)) { throw "StateFile not found: $StateFile" }
         $st = @(Get-Content -LiteralPath $StateFile | Where-Object { $_.Trim() -ne "" } | ForEach-Object { $_.Trim() })
         if ("exit" -notin $st) { $st += @("exit") }
-        if ("running" -notin $st) { $st += @("running") }
+        if ("accepted" -notin $st) { $st += @("accepted") }
         try {
             $ls = Get-Content -LiteralPath $legalPath -Raw -Encoding UTF8 | ConvertFrom-Json
             $ls.states = [array]$st
