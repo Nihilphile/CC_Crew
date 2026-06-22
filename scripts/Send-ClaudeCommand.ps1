@@ -537,7 +537,7 @@ Set-Location -LiteralPath "$Workspace"
 
 `$settingsJson = "$permsFile"
 `$modelArg = if ("$Model" -ne "") { @("--model","$Model") } else { @() }
-`$baseArgs = @("--dangerously-skip-permissions","--permission-mode","bypassPermissions","--add-dir","$Workspace","--settings",`$settingsJson) + `$modelArg
+`$baseArgs = @("--dangerously-skip-permissions","--permission-mode","bypassPermissions","--add-dir","$Workspace","--add-dir","$skillRoot","--settings",`$settingsJson) + `$modelArg
 
 # Resume decision uses orchestrator-passed UUID, NOT .claude-sid.txt.
 # .claude-sid.txt is written by manager for SUBSEQUENT launches.
@@ -602,7 +602,7 @@ Set-Location -LiteralPath "$Workspace"
 `$settingsJson = "$permsFile"
 
 `$modelArg = if ("$Model" -ne "") { @("--model","$Model") } else { @() }
-`$baseArgs = @("--dangerously-skip-permissions","--permission-mode","bypassPermissions","--add-dir","$Workspace","--settings",`$settingsJson) + `$modelArg
+`$baseArgs = @("--dangerously-skip-permissions","--permission-mode","bypassPermissions","--add-dir","$Workspace","--add-dir","$skillRoot","--settings",`$settingsJson) + `$modelArg
 
 `$sysPromptArgs = if ("$systemPromptPath" -ne "") { @("--system-prompt-file","$systemPromptPath") } else { @() }
 
