@@ -807,6 +807,14 @@ function _DoLaunch {
 
     $gotLock = $false
     if ($isNewSession) {
+        # Stale lock detection: if lock file is older than 5 minutes, auto-clean
+        if (Test-Path -LiteralPath $createLockPath -PathType Leaf) {
+            $lockAge = [math]::Floor(((Get-Date) - (Get-Item $createLockPath).LastWriteTime).TotalSeconds)
+            if ($lockAge -gt 300) {
+                Write-Host "[MANAGER] Stale create-session lock detected (${lockAge}s old), removing"
+                Remove-Item -LiteralPath $createLockPath -Force -ErrorAction SilentlyContinue
+            }
+        }
         Write-Host "[MANAGER] Acquiring create-session lock..."
         $lockTimeout = 60
         $lockStart = Get-Date
