@@ -567,7 +567,8 @@ if (-not (Test-Path "$donePath")) {
 
 Write-Output "exit=`$exit" | Out-File -LiteralPath "$transcriptPath" -Encoding UTF8
 "@
-    Set-Content -LiteralPath $runnerPath -Value $tuiTemplate -Encoding UTF8
+    $utf8Bom = New-Object System.Text.UTF8Encoding $true
+    [System.IO.File]::WriteAllText($runnerPath, $tuiTemplate, $utf8Bom)
 } else {
     # ---- -p mode (default) ----
     $pTemplate = @"
@@ -637,7 +638,8 @@ if (`$exit -eq 0 -and `$jsonOut) {
 
 Write-Output "exit=`$exit" | Out-File -LiteralPath "$transcriptPath" -Encoding UTF8
 "@
-    Set-Content -LiteralPath $runnerPath -Value $pTemplate -Encoding UTF8
+    $utf8Bom = New-Object System.Text.UTF8Encoding $true
+    [System.IO.File]::WriteAllText($runnerPath, $pTemplate, $utf8Bom)
 }
 
 Write-Host "Runner written: $runnerPath"
