@@ -295,12 +295,18 @@ function Build-WorkerPrompt {
     }
 
     # 3. Build completion reminder (brief, v2 protocol)
+    # Result file is mandatory in automated (-p) mode, strongly recommended in TUI.
+    $resultRequirement = if ($Mode -eq "p") {
+        "Writing a summary to: $resultPath is REQUIRED. Do not exit without it."
+    } else {
+        "Writing a summary to: $resultPath is strongly recommended."
+    }
     $reminder = @"
 
 Automated pipeline. No confirmation needed. No exploring beyond the task.
 
 COMPLETION — when your work is done:
-- Writing a summary to: $resultPath is optional but helpful.
+- $resultRequirement
 - The authoritative completion signal is Update-WorkerState.ps1:
   1. First call: --exit (prints checklist, no state change).
   2. Then call: --exit -Confirm -SummaryMessage "your_summary_here".
