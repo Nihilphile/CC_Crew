@@ -555,14 +555,12 @@ if ("$curSessionId" -ne "") {
     `$fullArgs = `$baseArgs
     Write-Host "[RUNNER] Starting fresh session (manager will capture UUID from filesystem)"
 }
-# Pass prompt as variable — avoids double-quote issues from prompt content
-`$promptContent = Get-Content -LiteralPath "$promptPath" -Raw -Encoding UTF8
-if (`$promptContent) { `$fullArgs += "--"; `$fullArgs += ,`$promptContent }
+# Pass prompt via stdin to avoid Claude Code CLI argument truncation
 
 # Append system prompt (runtime contract, compression-resistant)
 if ("$systemPromptPath" -ne "") { `$fullArgs += @("--system-prompt-file", "$systemPromptPath") }
 Write-Host "[RUNNER] Launching Claude..."
-& claude @fullArgs
+Get-Content -LiteralPath "$promptPath" -Raw -Encoding UTF8 | & claude @fullArgs
 `$exit = `$LASTEXITCODE
 
 # After Claude exits: ensure done.json exists with session_id
@@ -615,9 +613,9 @@ Set-Location -LiteralPath "$Workspace"
 
 # -p mode. If session UUID provided, resume it; otherwise start fresh.
 if ("$curSessionId" -ne "") {
-    `$jsonOut = & claude @baseArgs --resume "$curSessionId" -p --output-format json -- `$workerPrompt `$sysPromptArgs
+    `$jsonOut = `$workerPrompt | & claude @baseArgs --resume "$curSessionId" -p --output-format json `$sysPromptArgs
 } else {
-    `$jsonOut = & claude @baseArgs -p --output-format json -- `$workerPrompt `$sysPromptArgs
+    `$jsonOut = `$workerPrompt | & claude @baseArgs -p --output-format json `$sysPromptArgs
 }
 `$exit = `$LASTEXITCODE
 
