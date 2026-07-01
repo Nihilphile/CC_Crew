@@ -309,7 +309,7 @@ COMPLETION — when your work is done:
 - $resultRequirement
 - The authoritative completion signal is Update-WorkerState.ps1:
   1. First call: --exit (prints checklist, no state change).
-  2. Then call: --exit -Confirm -SummaryMessage "your_summary_here".
+  2. Then call: --exit -Confirm -SummaryMessage "brief summary".
 "@
 
     # 4. InjectNormal: load and prepend normal_prompt template (unchanged behavior)
