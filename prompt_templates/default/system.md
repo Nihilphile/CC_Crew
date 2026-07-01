@@ -45,7 +45,7 @@ role's state semantics for the full list of triggers and prohibitions.
 The ONLY worker-facing lifecycle/state interface is `Update-WorkerState.ps1`.
 
 ```
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "<your-role>" --<state>
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:CC_CREW_SKILL_ROOT/scripts/Update-WorkerState.ps1" -AgentName $env:CC_CREW_AGENT -CommandId $env:CC_CREW_COMMAND_ID -Role "<role>" --<state>
 ```
 
 Your identity is available as environment variables:
